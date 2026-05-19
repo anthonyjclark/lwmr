@@ -6,7 +6,8 @@ def main(seed: int, steps: int, quiet: bool) -> None:
     import gymnasium as gym
     import lwmr  # noqa: F401
 
-    env = gym.make("lwmr/Lwmr-v0", render_mode="viser", max_episode_steps=steps, quiet=quiet)
+    # env = gym.make("lwmr/Lwmr-v0", render_mode="viser", max_episode_steps=steps, quiet=quiet)
+    env = gym.make("lwmr/Lwmr-v0", render_mode="viser", quiet=quiet)
     # TODO: consider vectorised environments
     # vec_env = gym.make_vec(..., n_envs=...)
 
@@ -17,6 +18,7 @@ def main(seed: int, steps: int, quiet: bool) -> None:
 
         observation, reward, terminated, truncated, info = env.step(action)
         # print(observation[:3])
+        print(env.unwrapped.state_0.joint_qd.numpy()[-1])
         env.render()
 
         if terminated or truncated:
