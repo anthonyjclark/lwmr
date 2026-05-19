@@ -2,7 +2,6 @@ import newton
 import warp as wp
 from newton._src.core.types import Transform
 from newton.actuators import ClampingDCMotor, ControllerPD
-from newton.geometry import compute_inertia_shape
 
 
 def add_lwmr_robot(
@@ -15,33 +14,19 @@ def add_lwmr_robot(
     # TODO: only specify wh_thickness for cylindrical wheels
     # wh_thickness: float,
     wh_density: float,
-    add_support: bool,
+    lg_radius: float,
+    lg_offset: float,
+    num_legs: int,
     using_generalized_coordinates: bool,
-    # TODO: default to false
-    fixed_base: bool = True,
+    fixed_base: bool = False,
+    validate_inertia: bool = False,
+    ch_color: wp.vec3 = wp.vec3(0.8, 0.1, 0.1),
+    wh_color: wp.vec3 = wp.vec3(0.1, 0.1, 0.8),
+    lg_color: wp.vec3 = wp.vec3(0.1, 0.8, 0.1),
 ) -> tuple[newton.ModelBuilder, int, list[int], list[int]]:
 
-    # max_delay = 5
-    # builder = newton.ModelBuilder()
-    # builder.default_shape_cfg.density = 1000.0
-    # link = builder.add_link()
-    # joint = builder.add_joint_revolute(parent=-1, child=link, axis=newton.Axis.Z)
-    # builder.add_shape_sphere(body=link, radius=0.1)
-    # builder.add_articulation([joint])
-    # dof = builder.joint_qd_start[joint]
-    # builder.add_actuator(
-    #     ControllerPD,
-    #     index=dof,
-    #     kp=200.0,
-    #     kd=10.0,
-    #     delay_steps=max_delay,
-    #     # clamping=[(ClampingMaxEffort, {"max_effort": 500.0})],
-    # )
-    # return builder, link, None, [joint]
-
     builder = newton.ModelBuilder()
-    # TODO: look into `validate_inertia_detailed` for debugging inertia issues
-    # builder.validate_inertia_detailed = True
+    builder.validate_inertia_detailed = validate_inertia
 
     '''
     density: float = 1000.0
@@ -118,26 +103,61 @@ def add_lwmr_robot(
     # TODO: sift through the shape config options and determine which ones we want to set
     # cfg = newton.ModelBuilder.ShapeConfig()
 
+    #
+    # region chassis
+    #
+
+    hx = ch_length / 2
+    hy = ch_width / 2
+    hz = ch_height / 2
+
+    # TODO: set chassis density (and other properties)
+
     chassis_body = builder.add_link()
-    builder.add_shape_box(chassis_body, hx=0.05, hy=0.1, hz=0.01, xform=xform, color=wp.vec3(0.8, 0.1, 0.1))
-    joint = builder.add_joint_free(parent=-1, child=chassis_body)
-    # joint = builder.add_joint_fixed(parent=-1, child=chassis_body)
+    builder.add_shape_box(chassis_body, hx=hx, hy=hy, hz=hz, xform=xform, color=ch_color)
+
+    if fixed_base:
+        joint = builder.add_joint_fixed(parent=-1, child=chassis_body)
+    else:
+        joint = builder.add_joint_free(parent=-1, child=chassis_body)
+
+    #
+    # region wheels
+    #
+
+    drop_z: float = xform[2]  # type: ignore
+    wh_x_offset = ch_length / 2
+    wh_y_offset = ch_width / 2 + wh_radius
 
     wheels = [
-        (wp.vec3(0.025, -0.12, xform[2]), "a"),
-        (wp.vec3(0.025, 0.12, xform[2]), "b"),
-        (wp.vec3(-0.025, -0.12, xform[2]), "c"),
-        (wp.vec3(-0.025, 0.12, xform[2]), "d"),
+        (wh_x_offset, wh_y_offset, "wheel_front_left"),
+        (wh_x_offset, -wh_y_offset, "wheel_front_right"),
+        (-wh_x_offset, wh_y_offset, "wheel_rear_left"),
+        (-wh_x_offset, -wh_y_offset, "wheel_rear_right"),
     ]
 
     wheel_bodies = []
     wheel_joints = []
 
-    for wh_xform, wh_label in wheels:
-        wheel_body = builder.add_link()
+    for x, y, wh_label in wheels:
+        # # NOTE: newton defaults to z-up for cylinders
+        # wh_rotation = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), pi / 2)
 
-        builder.add_shape_sphere(wheel_body, radius=0.02)
+        wheel_body = builder.add_link()
+        builder.add_shape_sphere(wheel_body, radius=wh_radius, color=wh_color)
         wheel_bodies.append(wheel_body)
+
+        # Add legs at fixed positions around the wheel
+        for i in range(num_legs):
+            angle = 2 * wp.pi * i / num_legs
+            lg_x = lg_offset * wp.cos(angle)
+            lg_z = lg_offset * wp.sin(angle)
+            builder.add_shape_sphere(
+                wheel_body,
+                radius=lg_radius,
+                color=lg_color,
+                xform=wp.transform(p=wp.vec3(lg_x, 0, lg_z)),
+            )
 
         # has_drive = dim.target_ke != 0.0 or dim.target_kd != 0.0
         # if not has_drive: return JointTargetMode.NONE
@@ -149,61 +169,52 @@ def add_lwmr_robot(
         # ke is the joint stiffness
         # kd is the joint damping
 
+        #
+        # region joints
+        #
+
+        """TODO: figure out these parameters
+        effort_limit: Maximum effort (force/torque) the joint axis can exert. If None, the default value from ``ModelBuilder.default_joint_cfg.effort_limit`` is used.
+        velocity_limit: Maximum velocity the joint axis can achieve. If None, the default value from ``ModelBuilder.default_joint_cfg.velocity_limit`` is used.
+        friction: Friction coefficient for the joint axis. If None, the default value from ``ModelBuilder.default_joint_cfg.friction`` is used.
+        custom_attributes: Dictionary of custom attribute values for JOINT, JOINT_DOF, or JOINT_COORD frequency attributes.
+        """
+
         wheel_joint = builder.add_joint_revolute(
             parent=chassis_body,
             child=wheel_body,
-            parent_xform=wp.transform(p=wh_xform),
+            parent_xform=wp.transform(p=wp.vec3(x, y, drop_z)),
             axis=newton.Axis.Y,
             actuator_mode=newton.JointTargetMode.VELOCITY,
-            target_vel=10.47 * wp.sign(wh_xform[1]),
+            # TODO: initialize to zero (don't set the value) and use control?
+            # target_vel=10.47 * wp.sign(y),
+            # target_vel=10.47,
+            # TODO: add an argument for target_kd (do we need it?)
             target_kd=0.1,
-            # label=wh_label,
+            label=wh_label,
         )
         wheel_joints.append(wheel_joint)
 
+        # TODO: add parameters for these values
+        dc_args = {"saturation_effort": 80.0, "velocity_limit": 15.0, "max_motor_effort": 200.0}
+
         qd_index = builder.joint_qd_start[wheel_joint]
-
-        # max_e, sat, v_lim = 100.0, 80.0, 20.0
-        # max_e, sat, v_lim = 0.1, 0.1, 0.1
-        max_e, sat, v_lim = 200.0, 80.0, 15.0
-        dc_args = {"saturation_effort": sat, "velocity_limit": v_lim, "max_motor_effort": max_e}
-
-        # builder.add_actuator(ControllerPD, index=qd_index, kp=10, kd=0.1, delay_steps=None, clamping=None)
-        # builder.add_actuator(ControllerPD, index=qd_index, kd=0.01, delay_steps=None, clamping=None)
         builder.add_actuator(
             ControllerPD,
+            # MyController,
             index=qd_index,
+            # TODO: add an argument for kp
             kd=0.01,
-            delay_steps=None,
+            # TODO: add parameters for delay steps
+            # delay_steps=None,
             clamping=[(ClampingDCMotor, dc_args)],
         )
 
     builder.add_articulation([joint] + wheel_joints)
 
-    # TODO: get index of wheel_joint and set qd
-
-    # q_start = builder.joint_q_start[wheel_joint]
-    # q_dim = builder.joint_dof_dim[wheel_joint]
-    # q_count = sum(q_dim)
-    # q = [0.5]
-    # builder.joint_q[q_start : q_start + q_count] = q
-
-    # qd_start = builder.joint_qd_start[wheel_joint]
-    # qd_dim = builder.joint_dof_dim[wheel_joint]
-    # qd_count = sum(qd_dim)
-    # qd = [5]
-    # builder.joint_qd[qd_start : qd_start + qd_count] = qd
-
-    # # f = ma --> a = f/m (constant acceleration)
-    # for wh_joint in wheel_joints:
-    #     f_start = builder.joint_qd_start[wh_joint]
-    #     f_dim = builder.joint_dof_dim[wh_joint]
-    #     f_count = sum(f_dim)
-    #     f = [0.001]
-    #     builder.joint_f[f_start : f_start + f_count] = f
-
-    # builder.joint_q[-1] = 0.5
-    # builder.joint_qd[-1] = 0.1
+    #
+    # region Sites
+    #
 
     # # Add a site at body origin
     # imu_site = builder.add_site(
@@ -226,133 +237,3 @@ def add_lwmr_robot(
 
     # TODO: Can probably just return the builder
     return builder, chassis_body, wheel_bodies, wheel_joints
-
-    builder = newton.ModelBuilder()
-
-    #
-    # region chassis
-    #
-
-    ch_scale = wp.vec3(ch_length / 2, ch_width / 2, ch_height / 2)
-    ch_mass, _, ch_inertia = compute_inertia_shape(newton.GeoType.BOX, ch_scale, None, ch_density)
-
-    # TODO: consider label, lock_inertia, is_kinematic, and custom_attributes
-    chassis = builder.add_body(xform=xform, inertia=ch_inertia, mass=ch_mass)
-
-    # NOTE: set `density=0.0` so that the mass from above is used
-    # TODO: look at other shape config options (friction, restitution, etc)
-    ch_cfg = newton.ModelBuilder.ShapeConfig(density=0.0)
-    builder.add_shape_box(body=chassis, hx=ch_length / 2, hy=ch_width / 2, hz=ch_height / 2, cfg=ch_cfg)
-
-    # TODO: only add the free-joint when using a solver with generalized coordinates
-    # This issues a warning when using MuJoCo and I did not expect that
-    # builder.add_joint_free(chassis)
-
-    #
-    # Build four wheels
-    #
-
-    wh_scale = wp.vec3(wh_radius, 0.0, 0.0)
-    wh_mass, _, wh_inertia = compute_inertia_shape(newton.GeoType.SPHERE, wh_scale, None, wh_density)
-
-    # TODO: look at other shape config options (friction, restitution, etc)
-    wh_cfg = newton.ModelBuilder.ShapeConfig(density=0.0)
-
-    wh_vertical_offset = xform[2]
-    print(f"==>> wh_vertical_offset: {wh_vertical_offset}")
-    print(xform)
-    print(xform[0])
-    print(xform[1])
-
-    wh_offsets = [
-        ((ch_length / 2, ch_width / 2, wh_vertical_offset), "FrontRight"),
-        ((-ch_length / 2, ch_width / 2, wh_vertical_offset), "FrontLeft"),
-        ((ch_length / 2, -ch_width / 2, wh_vertical_offset), "RearRight"),
-        ((-ch_length / 2, -ch_width / 2, wh_vertical_offset), "RearLeft"),
-    ]
-
-    # # NOTE: newton defaults to z-up for cylinders
-    # wh_rotation = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), pi / 2)
-
-    wheels = []
-    wheel_joints = []
-
-    for wh_offset, wh_name in wh_offsets:
-        # TODO: add support for cylindrical wheels when newton supports it
-        # wh_xform = wp.transform(p=wh_offset, q=wh_rotation)
-        # builder.add_shape_cylinder(wheel, radius=wh_radius, half_height=wh_thickness / 2)
-
-        wh_xform = wp.transform(p=wh_offset)
-        wheel = builder.add_body(xform=wh_xform, inertia=wh_inertia, mass=wh_mass)
-        # wheel = builder.add_body(inertia=wh_inertia, mass=wh_mass)
-        builder.add_shape_sphere(wheel, radius=wh_radius, cfg=wh_cfg)
-
-        joint = builder.add_joint_revolute(
-            parent=chassis,
-            child=wheel,
-            # parent_xform=wp.transform(p=wh_offset, q=wh_rotation),
-            parent_xform=wp.transform(p=wh_offset),
-            # parent_xform=wp.transform(p=(0.2, 0.2, 0)),
-            # child_xform=wp.transform(p=(-0.2, 0, 0)),
-            # axis=newton.Axis.Y,
-            actuator_mode=newton.JointTargetMode.VELOCITY,
-            # armature=0.0,
-            collision_filter_parent=True,
-            label=f"wheel_{wh_name}",
-        )
-
-        wheels.append(wheel)
-        wheel_joints.append(joint)
-
-    return builder, chassis, wheels, wheel_joints
-
-
-"""
-    parent: The index of the parent body.
-    child: The index of the child body.
-    parent_xform: The transform from the parent body frame to the joint parent anchor frame.
-    child_xform: The transform from the child body frame to the joint child anchor frame.
-    axis: The axis of rotation in the joint parent anchor frame, which is
-        the parent body's local frame transformed by `parent_xform`. It can be a :class:`JointDofConfig` object
-        whose settings will be used instead of the other arguments.
-    target_pos: The target position of the joint.
-    target_vel: The target velocity of the joint.
-    target_ke: The stiffness of the joint target.
-    target_kd: The damping of the joint target.
-    limit_lower: The lower limit of the joint. If None, the default value from ``ModelBuilder.default_joint_cfg.limit_lower`` is used.
-    limit_upper: The upper limit of the joint. If None, the default value from ``ModelBuilder.default_joint_cfg.limit_upper`` is used.
-    limit_ke: The stiffness of the joint limit. If None, the default value from ``ModelBuilder.default_joint_cfg.limit_ke`` is used.
-    limit_kd: The damping of the joint limit. If None, the default value from ``ModelBuilder.default_joint_cfg.limit_kd`` is used.
-    armature: Artificial inertia added around the joint axis. If None, the default value from ``ModelBuilder.default_joint_cfg.armature`` is used.
-    effort_limit: Maximum effort (force/torque) the joint axis can exert. If None, the default value from ``ModelBuilder.default_joint_cfg.effort_limit`` is used.
-    velocity_limit: Maximum velocity the joint axis can achieve. If None, the default value from ``ModelBuilder.default_joint_cfg.velocity_limit`` is used.
-    friction: Friction coefficient for the joint axis. If None, the default value from ``ModelBuilder.default_joint_cfg.friction`` is used.
-    label: The label of the joint.
-    collision_filter_parent: Whether to filter collisions between shapes of the parent and child bodies.
-    enabled: Whether the joint is enabled.
-    custom_attributes: Dictionary of custom attribute values for JOINT, JOINT_DOF, or JOINT_COORD frequency attributes.
-
-    parent: int,
-    child: int,
-    parent_xform: Transform | None = None,
-    child_xform: Transform | None = None,
-    axis: AxisType | Vec3 | JointDofConfig | None = None,
-    target_pos: float | None = None,
-    target_vel: float | None = None,
-    target_ke: float | None = None,
-    target_kd: float | None = None,
-    limit_lower: float | None = None,
-    limit_upper: float | None = None,
-    limit_ke: float | None = None,
-    limit_kd: float | None = None,
-    armature: float | None = None,
-    effort_limit: float | None = None,
-    velocity_limit: float | None = None,
-    friction: float | None = None,
-    actuator_mode: JointTargetMode | None = None,
-    label: str | None = None,
-    collision_filter_parent: bool = True,
-    enabled: bool = True,
-    custom_attributes: dict[str, Any] | None = None,
-    **kwargs,
-"""

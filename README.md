@@ -23,7 +23,7 @@ uv add --editable packages/lwmr
 
 http://127.0.0.1:8047/viser-client/?playbackPath=http://127.0.0.1:8047/recordings/test.viser
 
-http://127.0.0.1:8047/viser-client/?playbackPath=http://127.0.0.1:8047/recordings/test2.viser&&initialCameraPosition=0.602,0.457,0.348&initialCameraLookAt=0.000,0.000,0.000&initialCameraUp=0.000,0.000,1.000&initialCameraFov=1.3090&initialCameraNear=0.01&initialCameraFar=1000
+http://127.0.0.1:8047/viser-client/?playbackPath=http://127.0.0.1:8047/recordings/test3.viser&initialCameraPosition=-0.748,-0.626,0.576&initialCameraLookAt=0.000,0.000,0.000&initialCameraUp=0.000,0.000,1.000&initialCameraFov=1.3090&initialCameraNear=0.01&initialCameraFar=1000
 
 - no articulation (The articulation is a set of joints that must be contiguous and monotonically increasing)
 
@@ -82,6 +82,32 @@ assert all(state.joint_q.numpy() == [*tf])
 ```
 
 
-By default (use_mujoco_contacts=True), SolverMuJoCo runs its own contact generation and the contacts argument to step should be None.
+add_constraint_mimic(joint0, joint1, coef0=0.0, coef1=1.0, enabled=True, label=None, custom_attributes=None)
+Adds a mimic constraint to the model.
+    A mimic constraint enforces that joint0 = coef0 + coef1 * joint1
 
-To replace MuJoCo’s contact generation with Newton’s pipeline — enabling advanced contact models (SDF, hydroelastic) — set use_mujoco_contacts=False and pass a populated Contacts object to step():
+
+
+
+    # NOTE: setting initialize position of the joint
+    # q_start = builder.joint_q_start[wheel_joint]
+    # q_count = sum(builder.joint_dof_dim[wheel_joint])
+    # builder.joint_q[q_start : q_start + q_count] = [0.5]
+
+    # NOTE: setting initial velocity of the joint
+    # qd_start = builder.joint_qd_start[wheel_joint]
+    # qd_count = sum(builder.joint_dof_dim[wheel_joint])
+    # builder.joint_qd[qd_start : qd_start + qd_count] = [5]
+
+    # NOTE: setting initial effort of the joint
+    # f = ma --> a = f/m (constant acceleration)
+    # f_start = builder.joint_qd_start[wheel_joint]
+    # f_count = sum(builder.joint_dof_dim[wheel_joint])
+    # builder.joint_f[f_start : f_start + f_count] = [0.01]
+
+Timings for
+- simulation step (forward dynamics, collision detection, constraint solving)
+- rendering step (CPU and GPU times)
+- control step
+
+- custom controller/actuator for tutorial?
