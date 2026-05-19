@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# IPython and Jupyter
+profile_default/
+ipython_config.py
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
