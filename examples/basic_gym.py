@@ -1,18 +1,25 @@
 from dataclasses import dataclass
 
+import tyro
+
 
 def main(seed: int, steps: int, quiet: bool) -> None:
     # NOTE: moving imports here to better handle quiet mode and speed up imports on help
     import gymnasium as gym
     import lwmr  # noqa: F401
+    import warp as wp
+    from tqdm.auto import tqdm, trange
+
+    if args.quiet:
+        wp.config.quiet = True
 
     # env = gym.make("lwmr/Lwmr-v0", render_mode="viser", max_episode_steps=steps, quiet=quiet)
     env = gym.make("lwmr/Lwmr-v0", render_mode="viser", quiet=quiet)
     # TODO: consider vectorised environments
     # vec_env = gym.make_vec(..., n_envs=...)
 
-    hih = 10.0
-    mid = 5.0
+    hih = 12.0
+    mid = 4.0
     off = 0.0
     control_sequence = [
         (40, [hih, hih, hih, hih]),  # forward
@@ -67,13 +74,5 @@ class Args:
 
 
 if __name__ == "__main__":
-    import tyro
-    import warp as wp
-    from tqdm.auto import tqdm, trange
-
     args = tyro.cli(Args)
-
-    if args.quiet:
-        wp.config.quiet = True
-
     main(seed=args.seed, steps=args.steps, quiet=args.quiet)
