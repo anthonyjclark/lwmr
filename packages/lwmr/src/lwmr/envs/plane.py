@@ -46,27 +46,20 @@ class LwmrPlaneEnv(gym.Env):
 
         self.quiet = quiet
 
-        solver_name = kwargs.get("solver", "MuJoCo")
-        using_generalized_coordinates = solver_name in ["MuJoCo", "Featherstone"]
+        # `frame_freq` is related to both `step()` and `render()`
+        frame_freq = frame_freq if frame_freq is not None else self.metadata["render_fps"]
 
-        density = kwargs.get("density", 1000.0)
+        assert frame_freq
+        assert sim_freq % frame_freq == 0, "`sim_freq` must be a multiple of `frame_freq`"
+        self.sim_steps_per_frame = sim_freq // frame_freq
 
-        ch_width = kwargs.get("ch_width", 0.3)
-        ch_length = kwargs.get("ch_length", 0.15)
-        ch_height = kwargs.get("ch_height", 0.02)
+        assert sim_freq % control_freq == 0, "`sim_freq` must be a multiple of `control_freq`"
+        self.sim_steps_per_control = sim_freq // control_freq
 
-        wh_radius = kwargs.get("wh_radius", 0.03)
-
-        add_imu = kwargs.get("add_imu", False)
-
-        # Simulation parameters
-        # TODO: add as kwargs
-        # TODO: control, render, and physics time steps
-        fps = self.metadata["render_fps"]
-        self.frame_dt = 1.0 / fps
-        self.sim_substeps = 10
-        self.sim_dt = self.frame_dt / self.sim_substeps
         self.sim_time = 0.0
+        self.frame_dt = 1.0 / frame_freq
+        self.sim_dt = 1.0 / sim_freq
+        self.control_steps_counter = 0
 
         # TODO: leg params
 
@@ -325,15 +318,19 @@ class LwmrPlaneEnv(gym.Env):
     # region simulate
     def _simulate(self) -> None:
 
-        # TODO: figure out relationship between sim_dt and control_dt
+        for _ in range(self.sim_steps_per_frame):
+            # Update control
+            # NOTE: this structure does not account for control delay
+            if self.control_steps_counter >= self.sim_steps_per_control:
+                self.control_steps_counter = 0
+                assert self.control.joint_f
+                self.control.joint_f.zero_()
 
-        assert self.control.joint_f
-        self.control.joint_f.zero_()
+                for actuator in self.actuators:
+                    actuator.step(self.state_0, self.control, dt=self.frame_dt)
 
-        for actuator in self.actuators:
-            actuator.step(self.state_0, self.control, dt=self.frame_dt)
+            self.control_steps_counter += 1
 
-        for _ in range(self.sim_substeps):
             self.state_0.clear_forces()
             self.model.collide(self.state_0, self.contacts)
             self.solver.step(
