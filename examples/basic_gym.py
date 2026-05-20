@@ -47,7 +47,7 @@ def main(args: Args) -> None:
     ]
     control_iter = iter(control_sequence)
     current_control_steps, current_control = next(control_iter)
-    tqdm.write(f"==>> Switching to next control: {current_control} for {current_control_steps} steps")
+    # tqdm.write(f"==>> Switching to next control: {current_control} for {current_control_steps} steps")
 
     observation, info = env.reset(seed=args.seed)
     # TODO: might still need to limit total number of steps (how is max_episode_steps handled in vectorised envs? or single environments)
@@ -56,10 +56,6 @@ def main(args: Args) -> None:
         action = current_control
 
         observation, reward, terminated, truncated, info = env.step(action)
-
-        # print(observation[:3])
-        # import sys
-        # print(env.unwrapped.state_0.joint_qd.numpy()[-1], file=sys.stderr)
 
         env.render()
 
@@ -71,12 +67,8 @@ def main(args: Args) -> None:
         if current_control_steps <= 0:
             try:
                 current_control_steps, current_control = next(control_iter)
-                tqdm.write(
-                    f"==>> Switching to next control: {current_control} for {current_control_steps} steps"
-                )
             except StopIteration:
-                # print("==>> Control sequence complete, repeating last control")
-                current_control_steps = 20  # repeat last control for 20 steps
+                current_control_steps = 20
 
     env.close()
 
