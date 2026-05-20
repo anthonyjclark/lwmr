@@ -3,6 +3,7 @@ from typing import Any
 
 import gymnasium as gym
 import newton
+import numpy as np
 import warp as wp
 from gymnasium.core import RenderFrame
 from newton.sensors import SensorIMU
@@ -16,12 +17,8 @@ OptType = dict[str, Any]
 
 
 class LwmrPlaneEnv(gym.Env):
-    # TODO: implement ViewerFile
-    # TODO: consider ViewerUSD
     metadata = {"render_modes": ["viser", "file", "none"], "render_fps": 60}
 
-    # TODO: list all the possible kwargs in the docstring, and their defaults (e.g., density, ch_width, ch_length, ch_height, wh_radius, wh_thickness, drop_height, solver, device, etc)
-    # def __init__(self, **kwargs):
     def __init__(
         self,
         # TODO: extract to RobotConfig dataclass and pass as single argument
@@ -35,6 +32,8 @@ class LwmrPlaneEnv(gym.Env):
         sim_freq: int = 600,
         control_freq: int = 5,
         frame_freq: int | None = None,
+        num_worlds: int = 1,
+        max_viewer_worlds: int = 4,
         device: str = "cuda",
         quiet: bool = False,
         # TODO: actually use this to configure rendering
@@ -99,8 +98,7 @@ class LwmrPlaneEnv(gym.Env):
 
         initial_xform = wp.transform(p=(0.0, 0.0, drop_height))
 
-        # return builder, chassis_body, wheel_bodies, wheel_joints, wheel_qd_indices
-        robot_builder, chassis, _, _, self.wheel_qd_indices = add_lwmr_robot(
+        robot_builder, chassis, _, _, _ = add_lwmr_robot(
             xform=initial_xform,
             ch_width=ch_width,
             ch_length=ch_length,
@@ -134,9 +132,10 @@ class LwmrPlaneEnv(gym.Env):
 
         # TODO: replicate vs vec
         # Should this be world.replicate?
-        # scene.replicate(arm, world_count=4, spacing=(2.0, 0.0, 0.0))
+        num_worlds = 16
+        world.replicate(robot_builder, world_count=num_worlds)  # , spacing=(2.0, 0.0, 0.0))
+        # world.add_world(robot_builder)
 
-        world.add_world(robot_builder)
         self.model = world.finalize(device=device)
 
         if add_imu:
@@ -154,6 +153,7 @@ class LwmrPlaneEnv(gym.Env):
         # NOTE: using stateless actuators
         self.actuators = self.model.actuators
         assert self.control.joint_target_vel
+        self.actuator_indices = self.actuators[0].indices.numpy()
         self.actuation_values = self.control.joint_target_vel.numpy()
 
         #
@@ -174,8 +174,10 @@ class LwmrPlaneEnv(gym.Env):
             with console.capture() as _:
                 self.viewer = newton.viewer.ViewerViser(record_to_viser=str(recording_path), verbose=False)
 
-        # NOTE: allows for multiple worlds (`max_worlds=`)
-        self.viewer.set_model(self.model)
+        # TODO: change
+        max_viewer_worlds = 16
+        self.viewer.set_model(self.model, max_worlds=max_viewer_worlds)
+        self.viewer.set_world_offsets(spacing=(0.8, 0.8, 0.0))
 
         starts = wp.array([wp.vec3(0, 0, 0.001)])
         ends = wp.array([wp.vec3(1, 0, 0.001)])
@@ -356,7 +358,8 @@ class LwmrPlaneEnv(gym.Env):
     # region step
     def step(self, action) -> tuple[ObsType, float, bool, bool, InfoType]:
 
-        self.actuation_values[self.wheel_qd_indices] = action[:]
+        # TODO: handle multiple worlds
+        self.actuation_values[self.actuator_indices] = np.tile(action, 16)
         wp.copy(self.control.joint_target_vel, wp.array(self.actuation_values))  # type: ignore
 
         if self.graph:
