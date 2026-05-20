@@ -21,15 +21,29 @@ class LwmrPlaneEnv(gym.Env):
     metadata = {"render_modes": ["viser", "file", "none"], "render_fps": 60}
 
     # TODO: list all the possible kwargs in the docstring, and their defaults (e.g., density, ch_width, ch_length, ch_height, wh_radius, wh_thickness, drop_height, solver, device, etc)
-    def __init__(self, **kwargs):
+    # def __init__(self, **kwargs):
+    def __init__(
+        self,
+        # TODO: extract to RobotConfig dataclass and pass as single argument
+        ch_width: float = 0.3,
+        ch_length: float = 0.15,
+        ch_height: float = 0.02,
+        wh_radius: float = 0.03,
+        density: float = 1000.0,
+        add_imu: bool = False,
+        solver_name: str = "MuJoCo",
+        sim_freq: int = 600,
+        control_freq: int = 5,
+        frame_freq: int | None = None,
+        device: str = "cuda",
+        quiet: bool = False,
+        # TODO: actually use this to configure rendering
+        render_mode: str = "none",
+    ):
         super().__init__()
 
-        #
-        # region Config
-        # Physical dimensions and properties for the robot
-        #
+        # TODO: consider validating arguments
 
-        quiet = kwargs.get("quiet", False)
         self.quiet = quiet
 
         solver_name = kwargs.get("solver", "MuJoCo")
@@ -106,7 +120,6 @@ class LwmrPlaneEnv(gym.Env):
             num_legs=3,
             fixed_base=False,
             # fixed_base=True,
-            using_generalized_coordinates=using_generalized_coordinates,
         )
 
         # Add an imu at the chassis center
@@ -131,7 +144,7 @@ class LwmrPlaneEnv(gym.Env):
         # scene.replicate(arm, world_count=4, spacing=(2.0, 0.0, 0.0))
 
         world.add_world(robot_builder)
-        self.model = world.finalize(device=kwargs.get("device", None))
+        self.model = world.finalize(device=device)
 
         if add_imu:
             self.imu = SensorIMU(self.model, sites="imu")
@@ -198,6 +211,10 @@ class LwmrPlaneEnv(gym.Env):
         #
         # region Solver
         #
+
+        # TODO: support different solvers and configurations (e.g., iterations, tolerance, etc)
+        assert solver_name == "MuJoCo", f"Unsupported solver: {solver_name}"
+        using_generalized_coordinates = solver_name in ["MuJoCo", "Featherstone"]
 
         # TODO: try other solvers
         # TODO: try other parameter values

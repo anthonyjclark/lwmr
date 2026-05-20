@@ -2,7 +2,6 @@ import newton
 import warp as wp
 from newton._src.core.types import Transform
 from newton.actuators import ClampingDCMotor, ControllerPD
-from newton.sensors import SensorIMU
 
 
 def add_lwmr_robot(
@@ -18,8 +17,6 @@ def add_lwmr_robot(
     lg_radius: float,
     lg_offset: float,
     num_legs: int,
-    using_generalized_coordinates: bool,
-    add_imu_site: bool = False,
     fixed_base: bool = False,
     validate_inertia: bool = False,
     ch_color: wp.vec3 = wp.vec3(0.8, 0.1, 0.1),

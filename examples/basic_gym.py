@@ -3,7 +3,18 @@ from dataclasses import dataclass
 import tyro
 
 
-def main(seed: int, steps: int, quiet: bool) -> None:
+@dataclass
+class Args:
+    """Example using Lwmr environment."""
+
+    quiet: bool = False
+    seed: int = 47
+    steps: int = 80
+    device: str = "cuda"
+    max_steps: int | None = None
+
+
+def main(args: Args) -> None:
     # NOTE: moving imports here to better handle quiet mode and speed up imports on help
     import gymnasium as gym
     import lwmr  # noqa: F401
@@ -13,8 +24,14 @@ def main(seed: int, steps: int, quiet: bool) -> None:
     if args.quiet:
         wp.config.quiet = True
 
-    # env = gym.make("lwmr/Lwmr-v0", render_mode="viser", max_episode_steps=steps, quiet=quiet)
-    env = gym.make("lwmr/Lwmr-v0", render_mode="viser", quiet=quiet)
+    env = gym.make(
+        "lwmr/Lwmr-v0",
+        render_mode="viser",
+        max_episode_steps=args.max_steps,
+        quiet=args.quiet,
+        device=args.device,
+    )
+
     # TODO: consider vectorised environments
     # vec_env = gym.make_vec(..., n_envs=...)
 
@@ -32,9 +49,9 @@ def main(seed: int, steps: int, quiet: bool) -> None:
     current_control_steps, current_control = next(control_iter)
     tqdm.write(f"==>> Switching to next control: {current_control} for {current_control_steps} steps")
 
-    observation, info = env.reset(seed=seed)
+    observation, info = env.reset(seed=args.seed)
     # TODO: might still need to limit total number of steps (how is max_episode_steps handled in vectorised envs? or single environments)
-    for step in trange(steps):
+    for step in trange(args.steps):
         # action = env.action_space.sample()
         action = current_control
 
@@ -64,15 +81,5 @@ def main(seed: int, steps: int, quiet: bool) -> None:
     env.close()
 
 
-@dataclass
-class Args:
-    """Example using Lwmr environment."""
-
-    quiet: bool = False
-    seed: int = 47
-    steps: int = 80
-
-
 if __name__ == "__main__":
-    args = tyro.cli(Args)
-    main(seed=args.seed, steps=args.steps, quiet=args.quiet)
+    main(tyro.cli(Args))
