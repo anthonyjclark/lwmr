@@ -5,6 +5,7 @@ import gymnasium as gym
 import newton
 import warp as wp
 from gymnasium.core import RenderFrame
+from newton.sensors import SensorIMU
 
 from ..robot import add_lwmr_robot
 
@@ -14,20 +15,9 @@ InfoType = dict[str, Any]
 OptType = dict[str, Any]
 
 
-# # TODO: remove
-# max_delay = 5
-# N = 2  # 2 % 5 != 0, N < buf_depth, N is even
-# K = 2
-# dt = 0.02
-# warmup_target = 0.0
-# cycle_targets = [2.0, -3.0, 5.0, -1.0]
-
-
 class LwmrPlaneEnv(gym.Env):
     # TODO: implement ViewerFile
     # TODO: consider ViewerUSD
-    # TODO: consider ViewerRerun instead of ViewerViser (both support notebooks)
-    # TODO: define a render_fps
     metadata = {"render_modes": ["viser", "file", "none"], "render_fps": 60}
 
     # TODO: list all the possible kwargs in the docstring, and their defaults (e.g., density, ch_width, ch_length, ch_height, wh_radius, wh_thickness, drop_height, solver, device, etc)
@@ -53,6 +43,17 @@ class LwmrPlaneEnv(gym.Env):
 
         wh_radius = kwargs.get("wh_radius", 0.03)
 
+        add_imu = kwargs.get("add_imu", False)
+
+        # Simulation parameters
+        # TODO: add as kwargs
+        # TODO: control, render, and physics time steps
+        fps = self.metadata["render_fps"]
+        self.frame_dt = 1.0 / fps
+        self.sim_substeps = 10
+        self.sim_dt = self.frame_dt / self.sim_substeps
+        self.sim_time = 0.0
+
         # TODO: leg params
 
         # TODO: only needed if supporting cylindrical wheels
@@ -69,8 +70,6 @@ class LwmrPlaneEnv(gym.Env):
 
         # Use body=-1 to attach shapes to the static world frame:
 
-        # builder = newton.ModelBuilder()
-
         # # Set defaults before adding shapes
         # builder.default_shape_cfg.ke = 1.0e6
         # builder.default_shape_cfg.kd = 1000.0
@@ -86,22 +85,6 @@ class LwmrPlaneEnv(gym.Env):
         # world.add_shape_plane(body=-1, plane=plane_eqn, width=plane_size, length=plane_size)
         world.add_ground_plane()
 
-        # # World-frame reference site
-        # world_origin = world.add_site(
-        #     body=-1,
-        #     xform=wp.transform(wp.vec3(0, 0, 0), wp.quat_identity()),
-        #     label="world_origin"
-        # )
-        # # 1. Create sensor and specify what to measure
-        # imu = SensorIMU(model, sites="imu_*")
-        # ...
-        # # 2. Compute measurements from the current state
-        # imu.update(state)
-
-        # # 3. Results stored on sensor attributes
-        # acc = imu.accelerometer.numpy()   # (n_sensors, 3) linear acceleration
-        # gyro = imu.gyroscope.numpy()      # (n_sensors, 3) angular velocity
-
         #
         # region Env
         # Create shared world and ground plane
@@ -109,7 +92,8 @@ class LwmrPlaneEnv(gym.Env):
 
         initial_xform = wp.transform(p=(0.0, 0.0, drop_height))
 
-        self.robot_builder, _, _, _ = add_lwmr_robot(
+        # return builder, chassis_body, wheel_bodies, wheel_joints, wheel_qd_indices
+        robot_builder, chassis, _, _, self.wheel_qd_indices = add_lwmr_robot(
             xform=initial_xform,
             ch_width=ch_width,
             ch_length=ch_length,
@@ -125,18 +109,37 @@ class LwmrPlaneEnv(gym.Env):
             using_generalized_coordinates=using_generalized_coordinates,
         )
 
+        # Add an imu at the chassis center
+        if add_imu:
+            robot_builder.add_site(body=chassis, label="imu")
+
+        # # Add a site with offset and rotation
+        # camera_site = robot_builder.add_site(
+        #     body=chassis_body,
+        #     xform=wp.transform(
+        #         wp.vec3(0.5, 0, 0.2),  # Position
+        #         wp.quat_from_axis_angle(wp.vec3(0, 1, 0), 3.14159 / 4),  # Orientation
+        #     ),
+        #     type=newton.GeoType.BOX,
+        #     scale=(0.05, 0.05, 0.02),
+        #     visible=True,
+        #     label="camera",
+        # )
+
         # TODO: replicate vs vec
         # Should this be world.replicate?
         # scene.replicate(arm, world_count=4, spacing=(2.0, 0.0, 0.0))
 
-        world.add_world(self.robot_builder)
+        world.add_world(robot_builder)
         self.model = world.finalize(device=kwargs.get("device", None))
+
+        if add_imu:
+            self.imu = SensorIMU(self.model, sites="imu")
 
         #
         # region State
         #
 
-        # TODO: rename state_0/state_1 to state_curr/state_next
         self.state_0 = self.model.state()
         self.state_1 = self.model.state()
         self.control = self.model.control()
@@ -144,25 +147,12 @@ class LwmrPlaneEnv(gym.Env):
 
         # NOTE: using stateless actuators
         self.actuators = self.model.actuators
-        self.actuator_indices = self.actuators[0].effort_indices.numpy()
+        assert self.control.joint_target_vel
+        self.actuation_values = self.control.joint_target_vel.numpy()
 
-        # TODO: try other solvers
-        # TODO: try other parameter values
-        self.solver = newton.solvers.SolverMuJoCo(self.model, iterations=100, ls_iterations=50, njmax=100)
-
-        assert self.state_0.joint_q and self.state_0.joint_qd
-        newton.eval_ik(self.model, self.state_0, self.state_0.joint_q, self.state_0.joint_qd)
-
-        assert self.state_0.joint_q and self.state_0.joint_qd
-        newton.eval_fk(self.model, self.state_0.joint_q, self.state_0.joint_qd, self.state_0)
-
-        # Simulation parameters
-        # TODO: control, render, and physics time steps
-        fps = self.metadata["render_fps"]
-        self.frame_dt = 1.0 / fps
-        self.sim_substeps = 10
-        self.sim_dt = self.frame_dt / self.sim_substeps
-        self.sim_time = 0.0
+        #
+        # region Viewer
+        #
 
         # TODO: check render mode before creating viewer, and only create if needed
         recording_path = Path("./recordings/test4.viser").resolve()
@@ -193,15 +183,31 @@ class LwmrPlaneEnv(gym.Env):
         ends = wp.array([wp.vec3(0, 0, 1)])
         self.viewer.log_arrows("z-axes", starts, ends, (0.0, 0.0, 1.0), width=0.04)
 
+        # Set the initial camera pose (this is a bit of a workaround)
         # self.viewer.set_camera(pos=wp.vec3(-0.748, -0.626, 0.576), pitch=-0.5, yaw=0.0)
-        # # initialCameraLookAt=0.000,0.000,0.000
-        # # initialCameraUp=0.000,0.000,1.000
-        # # initialCameraFov=1.3090
-        # # initialCameraNear=0.01
-        # # initialCameraFar=1000
+        self.viewer._server.initial_camera.position = (-0.748, -0.626, 0.576)
+        self.viewer._server.initial_camera.look_at = (0.000, 0.000, 0.000)
+        self.viewer._server.initial_camera.up = (0.000, 0.000, 1.000)
+        self.viewer._server.initial_camera.fov = 1.3090
+        self.viewer._server.initial_camera.near = 0.01
+        self.viewer._server.initial_camera.far = 1000
 
         # Render initial state before the first step
         self.render()
+
+        #
+        # region Solver
+        #
+
+        # TODO: try other solvers
+        # TODO: try other parameter values
+        self.solver = newton.solvers.SolverMuJoCo(self.model, iterations=100, ls_iterations=50, njmax=100)
+
+        assert self.state_0.joint_q and self.state_0.joint_qd
+        newton.eval_ik(self.model, self.state_0, self.state_0.joint_q, self.state_0.joint_qd)
+
+        assert self.state_0.joint_q and self.state_0.joint_qd
+        newton.eval_fk(self.model, self.state_0.joint_q, self.state_0.joint_qd, self.state_0)
 
         # Capture the simulation as a CUDA graph (if running on GPU)
         if self.model.device.is_cuda and wp.get_device().is_cuda:
@@ -283,6 +289,13 @@ class LwmrPlaneEnv(gym.Env):
 
     # region Obs
     def _get_obs(self) -> ObsType:
+
+        # TODO: figure out frequency of sensor updates and cache
+
+        # imu.update(state)
+        # acc = imu.accelerometer.numpy()   # (n_sensors, 3) linear acceleration
+        # gyro = imu.gyroscope.numpy()      # (n_sensors, 3) angular velocity
+
         # TODO: remove asserts? check performance implications
         assert self.state_0.body_q
         # TODO: currently returning the 7D transform of the sphere
@@ -329,10 +342,8 @@ class LwmrPlaneEnv(gym.Env):
     # region step
     def step(self, action) -> tuple[ObsType, float, bool, bool, InfoType]:
 
-        assert self.control.joint_target_vel
-        joint_target_vel_orig = self.control.joint_target_vel.numpy()
-        joint_target_vel_orig[self.actuator_indices] = action[:]  # type: ignore
-        wp.copy(self.control.joint_target_vel, wp.array(joint_target_vel_orig))
+        self.actuation_values[self.wheel_qd_indices] = action[:]
+        wp.copy(self.control.joint_target_vel, wp.array(self.actuation_values))  # type: ignore
 
         if self.graph:
             wp.capture_launch(self.graph)

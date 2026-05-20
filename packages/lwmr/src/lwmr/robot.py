@@ -2,6 +2,7 @@ import newton
 import warp as wp
 from newton._src.core.types import Transform
 from newton.actuators import ClampingDCMotor, ControllerPD
+from newton.sensors import SensorIMU
 
 
 def add_lwmr_robot(
@@ -18,12 +19,13 @@ def add_lwmr_robot(
     lg_offset: float,
     num_legs: int,
     using_generalized_coordinates: bool,
+    add_imu_site: bool = False,
     fixed_base: bool = False,
     validate_inertia: bool = False,
     ch_color: wp.vec3 = wp.vec3(0.8, 0.1, 0.1),
     wh_color: wp.vec3 = wp.vec3(0.1, 0.1, 0.8),
     lg_color: wp.vec3 = wp.vec3(0.1, 0.8, 0.1),
-) -> tuple[newton.ModelBuilder, int, list[int], list[int]]:
+) -> tuple[newton.ModelBuilder, int, list[int], list[int], list[int]]:
 
     builder = newton.ModelBuilder()
     builder.validate_inertia_detailed = validate_inertia
@@ -138,6 +140,7 @@ def add_lwmr_robot(
 
     wheel_bodies = []
     wheel_joints = []
+    wheel_qd_indices = []
 
     for x, y, wh_label in wheels:
         # # NOTE: newton defaults to z-up for cylinders
@@ -209,31 +212,9 @@ def add_lwmr_robot(
             # delay_steps=None,
             clamping=[(ClampingDCMotor, dc_args)],
         )
+        wheel_qd_indices.append(qd_index)
 
     builder.add_articulation([joint] + wheel_joints)
 
-    #
-    # region Sites
-    #
-
-    # # Add a site at body origin
-    # imu_site = builder.add_site(
-    #     body=body,
-    #     label="imu"
-    # )
-
-    # # Add a site with offset and rotation
-    # camera_site = builder.add_site(
-    #     body=body,
-    #     xform=wp.transform(
-    #         wp.vec3(0.5, 0, 0.2),  # Position
-    #         wp.quat_from_axis_angle(wp.vec3(0, 1, 0), 3.14159/4)  # Orientation
-    #     ),
-    #     type=newton.GeoType.BOX,
-    #     scale=(0.05, 0.05, 0.02),
-    #     visible=True,
-    #     label="camera"
-    # )
-
     # TODO: Can probably just return the builder
-    return builder, chassis_body, wheel_bodies, wheel_joints
+    return builder, chassis_body, wheel_bodies, wheel_joints, wheel_qd_indices
