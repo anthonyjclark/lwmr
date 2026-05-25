@@ -72,7 +72,7 @@ class LwmrPlaneEnv(gym.Env):
         # (default world -1; collides with all worlds)
         #
 
-        world = newton.ModelBuilder()
+        builder = newton.ModelBuilder()
 
         # Use body=-1 to attach shapes to the static world frame:
 
@@ -89,16 +89,24 @@ class LwmrPlaneEnv(gym.Env):
         # plane_size = 0.5
         # plane_eqn: tuple[float, float, float, float] = *world.up_vector, 0
         # world.add_shape_plane(body=-1, plane=plane_eqn, width=plane_size, length=plane_size)
-        world.add_ground_plane()
+        builder.add_ground_plane()
 
         #
         # region Env
         # Create shared world and ground plane
         #
 
-        initial_xform = wp.transform(p=(0.0, 0.0, drop_height))
+        # TODO: add config
+        # validate_inertia: bool = False,
+        # builder.validate_inertia_detailed = validate_inertia
 
-        robot_builder, chassis, _, _, _ = add_lwmr_robot(
+        initial_xform = wp.transform(p=(0.0, 0.0, drop_height))
+        fixed_base = False
+        # fixed_base = True  # TODO: make this configurable and test both cases
+
+        robot_builder = newton.ModelBuilder()
+        chassis, _, _, _ = add_lwmr_robot(
+            builder=robot_builder,
             xform=initial_xform,
             ch_width=ch_width,
             ch_length=ch_length,
@@ -109,13 +117,34 @@ class LwmrPlaneEnv(gym.Env):
             lg_radius=wh_radius * 0.3,
             lg_offset=wh_radius,
             num_legs=3,
-            fixed_base=False,
-            # fixed_base=True,
+            fixed_base=fixed_base,
         )
 
         # Add an imu at the chassis center
         if add_imu:
             robot_builder.add_site(body=chassis, label="imu")
+
+        num_worlds = 16
+        for _ in range(num_worlds):
+            builder.begin_world()
+
+            # Add a step to the world for the robot to drive over
+            hz = (wh_radius / 2.5) * np.random.uniform(0.8, 1.2)
+            pos = (0.5, 0.0, hz)
+            rot = wp.quat_rpy(0.0, 0.0, np.random.uniform(-0.2, 0.2))
+
+            builder.add_shape_box(
+                body=-1,
+                hx=0.1,
+                hy=0.5,
+                hz=hz,
+                xform=wp.transform(p=pos, q=rot),
+                color=(0.5, 0.5, 0.5),
+            )
+
+            builder.add_builder(robot_builder)
+
+            builder.end_world()
 
         # # Add a site with offset and rotation
         # camera_site = robot_builder.add_site(
@@ -130,13 +159,14 @@ class LwmrPlaneEnv(gym.Env):
         #     label="camera",
         # )
 
-        # TODO: replicate vs vec
-        # Should this be world.replicate?
-        num_worlds = 16
-        world.replicate(robot_builder, world_count=num_worlds)  # , spacing=(2.0, 0.0, 0.0))
-        # world.add_world(robot_builder)
+        # # TODO: replicate vs vec
+        # # Should this be world.replicate?
+        # num_worlds = 1
+        # builder.replicate(robot_builder, world_count=num_worlds)  # , spacing=(2.0, 0.0, 0.0))
+        # # world.add_world(robot_builder)
+        # # world.color()
 
-        self.model = world.finalize(device=device)
+        self.model = builder.finalize(device=device)
 
         if add_imu:
             self.imu = SensorIMU(self.model, sites="imu")
@@ -174,8 +204,7 @@ class LwmrPlaneEnv(gym.Env):
             with console.capture() as _:
                 self.viewer = newton.viewer.ViewerViser(record_to_viser=str(recording_path), verbose=False)
 
-        # TODO: change
-        max_viewer_worlds = 16
+        max_viewer_worlds = min(self.model.world_count, max_viewer_worlds)
         self.viewer.set_model(self.model, max_worlds=max_viewer_worlds)
         self.viewer.set_world_offsets(spacing=(0.8, 0.8, 0.0))
 

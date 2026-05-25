@@ -5,6 +5,7 @@ from newton.actuators import ClampingDCMotor, ControllerPD
 
 
 def add_lwmr_robot(
+    builder: newton.ModelBuilder,
     xform: Transform,
     ch_width: float,
     ch_length: float,
@@ -18,15 +19,10 @@ def add_lwmr_robot(
     lg_offset: float,
     num_legs: int,
     fixed_base: bool = False,
-    validate_inertia: bool = False,
     ch_color: wp.vec3 = wp.vec3(0.8, 0.1, 0.1),
     wh_color: wp.vec3 = wp.vec3(0.1, 0.1, 0.8),
     lg_color: wp.vec3 = wp.vec3(0.1, 0.8, 0.1),
-) -> tuple[newton.ModelBuilder, int, list[int], list[int], list[int]]:
-
-    builder = newton.ModelBuilder()
-    builder.validate_inertia_detailed = validate_inertia
-
+) -> tuple[int, list[int], list[int], list[int]]:
     '''
     density: float = 1000.0
     """The density of the shape material."""
