@@ -16,6 +16,19 @@ InfoType = dict[str, Any]
 OptType = dict[str, Any]
 
 
+def create_viewer_viser(rec_path: str, quiet: bool = True, port: int = 8080) -> newton.viewer.ViewerViser:
+    if quiet:
+        import rich
+
+        console = rich.get_console()
+        with console.capture() as _:
+            viewer = newton.viewer.ViewerViser(record_to_viser=rec_path, verbose=False, port=port)
+    else:
+        viewer = newton.viewer.ViewerViser(record_to_viser=rec_path, port=port)
+
+    return viewer
+
+
 # solver_name: str = "MuJoCo"
 # sim_freq: int = 600
 # control_freq: int = 5
@@ -28,7 +41,7 @@ OptType = dict[str, Any]
 
 
 class LwmrPlaneEnv(gym.Env):
-    metadata = {"render_modes": ["viser", "file", "none"], "render_fps": 60}
+    metadata = {"render_modes": ["viser", "none"], "render_fps": 60}
 
     def __init__(
         self,
@@ -38,17 +51,22 @@ class LwmrPlaneEnv(gym.Env):
         control_freq: int = 5,
         frame_freq: int | None = None,
         num_worlds: int = 1,
-        max_viewer_worlds: int = 16,
         device: str = "cuda",
         quiet: bool = False,
-        # TODO: actually use this to configure rendering
         render_mode: str = "none",
+        max_viewer_worlds: int = 16,
+        viewer_port: int = 8080,
+        viewer_spacing: float = 0.8,
     ):
         super().__init__()
 
         # TODO: consider validating arguments
 
         self.quiet = quiet
+
+        # Set global quiet mode for Warp before newton is initialized in the environment
+        if quiet:
+            wp.config.quiet = True
 
         # `frame_freq` is related to both `step()` and `render()`
         frame_freq = frame_freq if frame_freq is not None else self.metadata["render_fps"]
@@ -188,46 +206,42 @@ class LwmrPlaneEnv(gym.Env):
         # region Viewer
         #
 
-        # TODO: check render mode before creating viewer, and only create if needed
-        recording_path = Path("./recordings/test5.viser").resolve()
-        recording_path.parent.mkdir(parents=True, exist_ok=True)
+        viewer = None
 
-        # TODO: configure the port
-        if not quiet:
-            self.viewer = newton.viewer.ViewerViser(record_to_viser=str(recording_path))
-        else:
-            import rich
+        assert render_mode in self.metadata["render_modes"], f"Unsupported render mode: {render_mode}"
+        if render_mode == "viser:":
+            # TODO: make recording path configurable and handle existing recordings (e.g., overwrite, append, error)
+            rec_path = Path("./recordings/test5.viser").resolve()
+            rec_path.parent.mkdir(parents=True, exist_ok=True)
 
-            console = rich.get_console()
-            with console.capture() as _:
-                self.viewer = newton.viewer.ViewerViser(record_to_viser=str(recording_path), verbose=False)
+            viewer = create_viewer_viser(str(rec_path), quiet=quiet, port=viewer_port)
 
-        max_viewer_worlds = min(self.model.world_count, max_viewer_worlds)
-        self.viewer.set_model(self.model, max_worlds=max_viewer_worlds)
-        self.viewer.set_world_offsets(spacing=(0.8, 0.8, 0.0))
+            max_viewer_worlds = min(self.model.world_count, max_viewer_worlds)
+            viewer.set_model(self.model, max_worlds=max_viewer_worlds)
+            viewer.set_world_offsets(spacing=(viewer_spacing, viewer_spacing, 0.0))
 
-        starts = wp.array([wp.vec3(0, 0, 0.001)])
-        ends = wp.array([wp.vec3(1, 0, 0.001)])
-        self.viewer.log_arrows("x-axes", starts, ends, (1.0, 0.0, 0.0), width=0.04)
+            axes = [
+                ("x-axes", (1.0, 0.0, 0.001)),
+                ("y-axes", (0.0, 1.0, 0.001)),
+                ("z-axes", (0.0, 0.0, 1.0)),
+            ]
 
-        starts = wp.array([wp.vec3(0, 0, 0.001)])
-        ends = wp.array([wp.vec3(0, 1, 0.001)])
-        self.viewer.log_arrows("y-axes", starts, ends, (0.0, 1.0, 0.0), width=0.04)
+            # Add axes to the viewer for reference
+            for label, axis in axes:
+                starts = wp.array([wp.vec3(0, 0, 0.001)])
+                ends = wp.array([wp.vec3(*axis)])
+                viewer.log_arrows(label, starts, ends, axis, width=0.04)
 
-        starts = wp.array([wp.vec3(0, 0, 0.001)])
-        ends = wp.array([wp.vec3(0, 0, 1)])
-        self.viewer.log_arrows("z-axes", starts, ends, (0.0, 0.0, 1.0), width=0.04)
-
-        # Set the initial camera pose (this is a bit of a workaround)
-        # self.viewer.set_camera(pos=wp.vec3(-0.748, -0.626, 0.576), pitch=-0.5, yaw=0.0)
-        self.viewer._server.initial_camera.position = (-0.748, -0.626, 0.576)
-        self.viewer._server.initial_camera.look_at = (0.000, 0.000, 0.000)
-        self.viewer._server.initial_camera.up = (0.000, 0.000, 1.000)
-        self.viewer._server.initial_camera.fov = 1.3090
-        self.viewer._server.initial_camera.near = 0.01
-        self.viewer._server.initial_camera.far = 1000
+            # Set the initial camera pose (this is a bit of a workaround)
+            viewer._server.initial_camera.position = (-0.748, -0.626, 0.576)
+            viewer._server.initial_camera.look_at = (0.000, 0.000, 0.000)
+            viewer._server.initial_camera.up = (0.000, 0.000, 1.000)
+            viewer._server.initial_camera.fov = 1.3090
+            viewer._server.initial_camera.near = 0.01
+            viewer._server.initial_camera.far = 1000
 
         # Render initial state before the first step
+        self.viewer = viewer
         self.render()
 
         #
@@ -261,9 +275,10 @@ class LwmrPlaneEnv(gym.Env):
         # Gym parameters and setup
         #
 
-        # NOTE: control the four wheel motors
-        # TODO: make this depend on self.control.joint_target_vel shape
-        self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(len(self.actuators),))
+        # TODO: take into account multiple worlds
+
+        # Control the four wheel motors
+        self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(len(self.actuators[0].indices),))
 
         # TODO: replace with actual observation space from the robot
         self.observation_space = gym.spaces.Box(low=-float("inf"), high=float("inf"), shape=(7,))
@@ -408,17 +423,15 @@ class LwmrPlaneEnv(gym.Env):
 
     # region render
     def render(self, mode="viser") -> RenderFrame | list[RenderFrame] | None:
-        if mode == "viser":
+        if self.viewer:
             self.viewer.begin_frame(self.sim_time)
             self.viewer.log_state(self.state_0)
             self.viewer.end_frame()
 
     # region close
     def close(self) -> None:
-        # TODO: check if viewer exists and if recording should be saved
         # self.viewer.save_recording()
         # TODO: handle "(viser) Server stopped" message at start somehow
-        self.viewer.close()
-        if not self.quiet:
-            print("Viewer closed and recording saved")
+        if self.viewer:
+            self.viewer.close()
         super().close()
