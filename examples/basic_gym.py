@@ -15,7 +15,6 @@ class Args:
 
     # Simulation configuration parameters
     steps: int = 80
-    max_steps: int | None = None
     num_worlds: int = 1
 
     # Robot configuration parameters
@@ -55,20 +54,11 @@ def looping_control_sequence_generator(
 
 
 def main(args: Args) -> None:
-    # NOTE: moving imports here to better handle quiet mode and speed up imports on help
+    # NOTE: imports are here to speed help
     import gymnasium as gym
-    import lwmr  # noqa: F401
-    import warp as wp
+    import lwmr  # noqa: F401 <-- register the environment
     from lwmr import LwmrRobotConfig
     from tqdm.auto import trange
-
-    if args.quiet:
-        wp.config.quiet = True
-
-    # TODO:
-    # seed: int = 47
-    # steps: int = 80
-    # max_steps: int | None = None
 
     robot_config = LwmrRobotConfig(num_legs=args.num_legs)
 
@@ -76,7 +66,6 @@ def main(args: Args) -> None:
         "lwmr/Lwmr-v0",
         render_mode="viser",
         robot_config=robot_config,
-        max_episode_steps=args.max_steps,
         quiet=args.quiet,
         device=args.device,
         num_worlds=args.num_worlds,
@@ -85,7 +74,7 @@ def main(args: Args) -> None:
     control_sequence = looping_control_sequence_generator(lo=0.0, mid=4.0, hi=12.0)
 
     observation, info = env.reset(seed=args.seed)
-    # TODO: might still need to limit total number of steps (how is max_episode_steps handled in vectorised envs? or single environments)
+
     for step in trange(args.steps):
         action = next(control_sequence)
 
