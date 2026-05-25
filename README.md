@@ -231,8 +231,19 @@ Don't need `make_vec` when using newton
 setup operations can be slow (non-gpu)
 try to keep all sim step operations on the gpu
 
+should `reset` take a batched input for vectorised environments?
+
 
 Opinionated python
 - `tyro`
 - `tqdm` or
 - `@dataclass` for config
+- wandb
+- tensorboard
+- checkpoints
+
+def _set_seed(self, seed: int | None) -> None:
+    rng = torch.Generator()
+    if seed is not None:
+        rng.manual_seed(seed)
+    self.rng = rng
