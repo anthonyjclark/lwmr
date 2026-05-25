@@ -8,11 +8,18 @@ import tyro
 class Args:
     """Example using Lwmr environment."""
 
+    # Simulation parameters
     quiet: bool = False
     seed: int = 47
-    steps: int = 80
     device: str = "cuda"
+
+    # Simulation configuration parameters
+    steps: int = 80
     max_steps: int | None = None
+    num_worlds: int = 1
+
+    # Robot configuration parameters
+    num_legs: int = 0
 
 
 MotorCommand = tuple[float, float, float, float]
@@ -52,17 +59,27 @@ def main(args: Args) -> None:
     import gymnasium as gym
     import lwmr  # noqa: F401
     import warp as wp
+    from lwmr import LwmrRobotConfig
     from tqdm.auto import trange
 
     if args.quiet:
         wp.config.quiet = True
 
+    # TODO:
+    # seed: int = 47
+    # steps: int = 80
+    # max_steps: int | None = None
+
+    robot_config = LwmrRobotConfig(num_legs=args.num_legs)
+
     env = gym.make(
         "lwmr/Lwmr-v0",
         render_mode="viser",
+        robot_config=robot_config,
         max_episode_steps=args.max_steps,
         quiet=args.quiet,
         device=args.device,
+        num_worlds=args.num_worlds,
     )
 
     control_sequence = looping_control_sequence_generator(lo=0.0, mid=4.0, hi=12.0)

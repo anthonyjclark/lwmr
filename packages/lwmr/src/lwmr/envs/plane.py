@@ -8,7 +8,7 @@ import warp as wp
 from gymnasium.core import RenderFrame
 from newton.sensors import SensorIMU
 
-from ..robot import add_lwmr_robot
+from ..robot import LwmrRobotConfig, add_lwmr_robot
 
 # TODO: add more specificity
 ObsType = gym.spaces.Box
@@ -16,24 +16,29 @@ InfoType = dict[str, Any]
 OptType = dict[str, Any]
 
 
+# solver_name: str = "MuJoCo"
+# sim_freq: int = 600
+# control_freq: int = 5
+# frame_freq: int | None = None
+# num_worlds: int = 1
+# max_viewer_worlds: int = 16
+# device: str = "cuda"
+# quiet: bool = False
+# render_mode: str = "none"
+
+
 class LwmrPlaneEnv(gym.Env):
     metadata = {"render_modes": ["viser", "file", "none"], "render_fps": 60}
 
     def __init__(
         self,
-        # TODO: extract to RobotConfig dataclass and pass as single argument
-        ch_width: float = 0.3,
-        ch_length: float = 0.15,
-        ch_height: float = 0.02,
-        wh_radius: float = 0.03,
-        density: float = 1000.0,
-        add_imu: bool = False,
+        robot_config: LwmrRobotConfig = LwmrRobotConfig(),
         solver_name: str = "MuJoCo",
         sim_freq: int = 600,
         control_freq: int = 5,
         frame_freq: int | None = None,
         num_worlds: int = 1,
-        max_viewer_worlds: int = 4,
+        max_viewer_worlds: int = 16,
         device: str = "cuda",
         quiet: bool = False,
         # TODO: actually use this to configure rendering
@@ -65,7 +70,7 @@ class LwmrPlaneEnv(gym.Env):
         # TODO: only needed if supporting cylindrical wheels
         # wh_thickness = kwargs.get("wh_thickness", 0.01)
 
-        drop_height = wh_radius + 0.05
+        drop_height = robot_config.wh_radius + 0.05
 
         #
         # region World
@@ -105,31 +110,24 @@ class LwmrPlaneEnv(gym.Env):
         # fixed_base = True  # TODO: make this configurable and test both cases
 
         robot_builder = newton.ModelBuilder()
+
         chassis, _, _, _ = add_lwmr_robot(
-            builder=robot_builder,
-            xform=initial_xform,
-            ch_width=ch_width,
-            ch_length=ch_length,
-            ch_height=ch_height,
-            ch_density=density,
-            wh_radius=wh_radius,
-            wh_density=density,
-            lg_radius=wh_radius * 0.3,
-            lg_offset=wh_radius,
-            num_legs=3,
+            robot_builder,
+            initial_xform,
+            robot_config,
             fixed_base=fixed_base,
         )
 
         # Add an imu at the chassis center
-        if add_imu:
+        if robot_config.add_imu:
             robot_builder.add_site(body=chassis, label="imu")
 
-        num_worlds = 16
+        # num_worlds = 16
         for _ in range(num_worlds):
             builder.begin_world()
 
             # Add a step to the world for the robot to drive over
-            hz = (wh_radius / 2.5) * np.random.uniform(0.8, 1.2)
+            hz = (robot_config.wh_radius / 2.5) * np.random.uniform(0.8, 1.2)
             pos = (0.5, 0.0, hz)
             rot = wp.quat_rpy(0.0, 0.0, np.random.uniform(-0.2, 0.2))
 
@@ -168,7 +166,7 @@ class LwmrPlaneEnv(gym.Env):
 
         self.model = builder.finalize(device=device)
 
-        if add_imu:
+        if robot_config.add_imu:
             self.imu = SensorIMU(self.model, sites="imu")
 
         #
@@ -191,7 +189,7 @@ class LwmrPlaneEnv(gym.Env):
         #
 
         # TODO: check render mode before creating viewer, and only create if needed
-        recording_path = Path("./recordings/test4.viser").resolve()
+        recording_path = Path("./recordings/test5.viser").resolve()
         recording_path.parent.mkdir(parents=True, exist_ok=True)
 
         # TODO: configure the port
@@ -388,7 +386,7 @@ class LwmrPlaneEnv(gym.Env):
     def step(self, action) -> tuple[ObsType, float, bool, bool, InfoType]:
 
         # TODO: handle multiple worlds
-        self.actuation_values[self.actuator_indices] = np.tile(action, 16)
+        self.actuation_values[self.actuator_indices] = np.tile(action, self.model.world_count)  # type: ignore
         wp.copy(self.control.joint_target_vel, wp.array(self.actuation_values))  # type: ignore
 
         if self.graph:

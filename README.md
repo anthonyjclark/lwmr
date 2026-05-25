@@ -210,3 +210,29 @@ Here are the notable parts (I am controlling based on velocity, not position, yo
 2. Create an actuator: builder.add_actuator(...)
 3. Set the target: wp.copy(self.control.joint_target_vel, wp.array(self.actuation_values))
 4. Step the actuator: actuator.step(self.state_0, self.control, dt=self.frame_dt)
+
+
+# Always have the source handy
+❯ git clone --depth 1 --branch develop https://github.com/isaac-sim/IsaacLab
+
+
+
+`NewtonManager`
+- `_solver_dt = 1.0 / 200.0`
+- `_num_substeps = 1`
+
+what information will the robot have? (proprioception? cameras? lidar? pose?)
+
+
+Don't need `make_vec` when using newton
+    # TODO: consider vectorised environments
+    # vec_env = gym.make_vec(..., n_envs=...)
+
+setup operations can be slow (non-gpu)
+try to keep all sim step operations on the gpu
+
+
+Opinionated python
+- `tyro`
+- `tqdm` or
+- `@dataclass` for config

@@ -1,23 +1,32 @@
+from dataclasses import dataclass
+
 import newton
 import warp as wp
 from newton._src.core.types import Transform
 from newton.actuators import ClampingDCMotor, ControllerPD
 
 
+@dataclass
+class LwmrRobotConfig:
+    ch_width: float = 0.3
+    ch_length: float = 0.15
+    ch_height: float = 0.02
+    ch_density: float = 1000.0
+    wh_radius: float = 0.03
+    wh_density: float = 1000.0
+    lg_radius: float = 0.01
+    lg_offset: float = 0.03
+    num_legs: int = 0
+    add_imu: bool = False
+
+    # TODO: only specify wh_thickness for cylindrical wheels
+    # wh_thickness: float,
+
+
 def add_lwmr_robot(
     builder: newton.ModelBuilder,
     xform: Transform,
-    ch_width: float,
-    ch_length: float,
-    ch_height: float,
-    ch_density: float,
-    wh_radius: float,
-    # TODO: only specify wh_thickness for cylindrical wheels
-    # wh_thickness: float,
-    wh_density: float,
-    lg_radius: float,
-    lg_offset: float,
-    num_legs: int,
+    config: LwmrRobotConfig,
     fixed_base: bool = False,
     ch_color: wp.vec3 = wp.vec3(0.8, 0.1, 0.1),
     wh_color: wp.vec3 = wp.vec3(0.1, 0.1, 0.8),
@@ -102,9 +111,9 @@ def add_lwmr_robot(
     # region chassis
     #
 
-    hx = ch_length / 2
-    hy = ch_width / 2
-    hz = ch_height / 2
+    hx = config.ch_length / 2
+    hy = config.ch_width / 2
+    hz = config.ch_height / 2
 
     # TODO: set chassis density (and other properties)
 
@@ -121,8 +130,8 @@ def add_lwmr_robot(
     #
 
     drop_z: float = xform[2]  # type: ignore
-    wh_x_offset = ch_length / 2
-    wh_y_offset = ch_width / 2 + wh_radius
+    wh_x_offset = config.ch_length / 2
+    wh_y_offset = config.ch_width / 2 + config.wh_radius
 
     wheels = [
         (wh_x_offset, wh_y_offset, "wheel_front_left"),
@@ -140,17 +149,17 @@ def add_lwmr_robot(
         # wh_rotation = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), pi / 2)
 
         wheel_body = builder.add_link()
-        builder.add_shape_sphere(wheel_body, radius=wh_radius, color=wh_color)
+        builder.add_shape_sphere(wheel_body, radius=config.wh_radius, color=wh_color)
         wheel_bodies.append(wheel_body)
 
         # Add legs at fixed positions around the wheel
-        for i in range(num_legs):
-            angle = 2 * wp.pi * i / num_legs
-            lg_x = lg_offset * wp.cos(angle)
-            lg_z = lg_offset * wp.sin(angle)
+        for i in range(config.num_legs):
+            angle = 2 * wp.pi * i / config.num_legs
+            lg_x = config.lg_offset * wp.cos(angle)
+            lg_z = config.lg_offset * wp.sin(angle)
             builder.add_shape_sphere(
                 wheel_body,
-                radius=lg_radius,
+                radius=config.lg_radius,
                 color=lg_color,
                 xform=wp.transform(p=wp.vec3(lg_x, 0, lg_z)),
             )
@@ -209,5 +218,4 @@ def add_lwmr_robot(
 
     builder.add_articulation([joint] + wheel_joints)
 
-    # TODO: Can probably just return the builder
-    return builder, chassis_body, wheel_bodies, wheel_joints, wheel_qd_indices
+    return chassis_body, wheel_bodies, wheel_joints, wheel_qd_indices
