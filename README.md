@@ -224,6 +224,8 @@ Here are the notable parts (I am controlling based on velocity, not position, yo
 what information will the robot have? (proprioception? cameras? lidar? pose?)
 
 
+torchrl ParallelEnv vs newton num_worlds/world_count
+
 Don't need `make_vec` when using newton
     # TODO: consider vectorised environments
     # vec_env = gym.make_vec(..., n_envs=...)
@@ -247,3 +249,10 @@ def _set_seed(self, seed: int | None) -> None:
     if seed is not None:
         rng.manual_seed(seed)
     self.rng = rng
+    # torch.manual_seed(seed)
+
+maybe mask the different worlds?
+if done, then either reset or don't process input?
+
+
+use info to plot path

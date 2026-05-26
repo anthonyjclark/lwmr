@@ -21,6 +21,7 @@ class LwmrRobotConfig:
 
     # TODO: only specify wh_thickness for cylindrical wheels
     # wh_thickness: float,
+    # TODO: leg params
 
 
 def add_lwmr_robot(
