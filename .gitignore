@@ -15,5 +15,7 @@ ipython_config.py
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
 
+checkpoints/
+
 # Manually add recordings if desired, but ignore by default
 recordings/
