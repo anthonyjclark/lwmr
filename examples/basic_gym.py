@@ -1,7 +1,7 @@
-from collections.abc import Generator
 from dataclasses import dataclass
 
 import tyro
+from utils import looping_control_sequence_generator
 
 
 @dataclass
@@ -21,40 +21,8 @@ class Args:
     num_legs: int = 0
 
 
-MotorCommand = tuple[float, float, float, float]
-
-
-def looping_control_sequence_generator(
-    lo: float, mid: float, hi: float, steps_per_command: int | list[int] = 40
-) -> Generator[MotorCommand, None, None]:
-
-    if isinstance(steps_per_command, int):
-        steps_per_command = [steps_per_command] * 5
-
-    control_sequence = [
-        (steps_per_command[0], (hi, hi, hi, hi)),  # forward
-        (steps_per_command[1], (mid, hi, mid, hi)),  # veer left
-        (steps_per_command[2], (hi, hi, hi, hi)),  # forward
-        (steps_per_command[3], (hi, mid, hi, mid)),  # veer right
-        (steps_per_command[4], (lo, lo, lo, lo)),  # stop
-    ]
-
-    control_iter = iter(control_sequence)
-    current_control_steps, current_control = next(control_iter)
-    while True:
-        yield current_control
-
-        current_control_steps -= 1
-        if current_control_steps <= 0:
-            try:
-                current_control_steps, current_control = next(control_iter)
-            except StopIteration:
-                control_iter = iter(control_sequence)
-                current_control_steps, current_control = next(control_iter)
-
-
 def main(args: Args) -> None:
-    # NOTE: imports are here to speed help
+    # Imports are here to speed help
     import gymnasium as gym
     import lwmr  # noqa: F401 <-- register the environment
     from lwmr import LwmrRobotConfig
@@ -71,20 +39,26 @@ def main(args: Args) -> None:
         num_worlds=args.num_worlds,
     )
 
-    control_sequence = looping_control_sequence_generator(lo=0.0, mid=4.0, hi=12.0)
+    lo, mid, hi = 0.0, 0.4, 1.0
+    cmds = [
+        (hi, hi, hi, hi),  # forward
+        (mid, hi, mid, hi),  # veer left
+        (hi, hi, hi, hi),  # forward
+        (hi, mid, hi, mid),  # veer right
+        (lo, lo, lo, lo),  # stop
+    ]
+
+    control_sequence = looping_control_sequence_generator(cmds, steps=40)
 
     observation, info = env.reset(seed=args.seed)
 
     for step in trange(args.steps):
         action = next(control_sequence)
 
+        # Ignoring terminated and truncated
         observation, reward, terminated, truncated, info = env.step(action)
 
         env.render()
-
-        if terminated or truncated:
-            observation, info = env.reset()
-            break
 
     env.close()
 
