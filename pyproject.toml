@@ -11,6 +11,9 @@ dependencies = [
     "matplotlib>=3.10.9",
     "newton[examples,notebook,torch-cu12]>=1.2.0",
     "pandas>=3.0.3",
+    "sb3-contrib",
+    "setuptools==65.5.0",
+    "tensorboard>=2.20.0",
     "torchrl>=0.12.0",
     "tyro>=1.0.13",
 ]
@@ -22,6 +25,7 @@ members = [
 
 [tool.uv.sources]
 lwmr = { workspace = true, editable = true }
+sb3-contrib = { git = "https://github.com/Stable-Baselines-Team/stable-baselines3-contrib", rev = "feat/gymnasium-support" }
 
 [tool.ruff]
 line-length = 110
