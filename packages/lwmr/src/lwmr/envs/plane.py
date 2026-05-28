@@ -70,7 +70,7 @@ class LwmrPlaneEnv(gym.Env):
         self.control_freq = control_freq
         self.frame_freq = frame_freq
         self.num_worlds = num_worlds
-        self.device = device
+        self.device = device if device == "cuda" and wp.get_device().is_cuda else "cpu"
         self.quiet = quiet
         self.render_mode = render_mode
         self.max_viewer_worlds = max_viewer_worlds
