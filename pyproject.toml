@@ -9,6 +9,7 @@ dependencies = [
     "jupyterlab>=4.5.7",
     "lwmr",
     "matplotlib>=3.10.9",
+    "nbsphinx>=0.9.8",
     "newton[examples,notebook,torch-cu12]>=1.2.0",
     "pandas>=3.0.3",
     "sb3-contrib",
