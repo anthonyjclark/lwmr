@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import tyro
-from utils import looping_control_sequence_generator
+from lwmr import control_sequence_generator
 
 
 @dataclass
@@ -40,7 +40,7 @@ def main(args: Args) -> None:
     )
 
     lo, mid, hi = 0.0, 0.4, 1.0
-    cmds = [
+    seq = [
         (hi, hi, hi, hi),  # forward
         (mid, hi, mid, hi),  # veer left
         (hi, hi, hi, hi),  # forward
@@ -48,12 +48,12 @@ def main(args: Args) -> None:
         (lo, lo, lo, lo),  # stop
     ]
 
-    control_sequence = looping_control_sequence_generator(cmds, steps=40)
+    cmds = control_sequence_generator(seq, steps=40)
 
     observation, info = env.reset(seed=args.seed)
 
     for step in trange(args.steps):
-        action = next(control_sequence)
+        action = next(cmds)
 
         # Ignoring terminated and truncated
         observation, reward, terminated, truncated, info = env.step(action)
