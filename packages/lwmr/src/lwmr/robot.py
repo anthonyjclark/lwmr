@@ -18,6 +18,7 @@ class LwmrRobotConfig:
     lg_offset: float = 0.03
     num_legs: int = 0
     add_imu: bool = False
+    add_camera: bool = False
 
     # TODO: only specify wh_thickness for cylindrical wheels
     # wh_thickness: float,

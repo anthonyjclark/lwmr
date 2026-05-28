@@ -13,7 +13,6 @@ from numpy.typing import NDArray
 from ..robot import LwmrRobotConfig, add_lwmr_robot
 from .utils import create_viewer_viser, quat_to_rpy, world_to_body
 
-# TODO: add more specificity
 ObsType = NDArray
 InfoType = dict[str, Any]
 OptType = dict[str, Any]
@@ -29,9 +28,14 @@ class LwmrPlaneEnv(gym.Env):
         config=None,
         *,
         robot_config: LwmrRobotConfig = LwmrRobotConfig(),
-        waypoints: list[WaypointType] = [np.array([0.5, 0.0]), np.array([0.5, 0.5])],
+        waypoints: list[WaypointType] | None = None,
         solver_name: str = "MuJoCo",
-        sim_freq: int = 600,
+        add_step: bool = False,
+        n_lookahead: int = 3,
+        hit_radius: float = 0.01,
+        world_bound: float = 20.0,
+        max_steps: int = 256,
+        sim_freq: int = 240,
         control_freq: int = 5,
         frame_freq: int | None = None,
         num_worlds: int = 1,
@@ -39,14 +43,29 @@ class LwmrPlaneEnv(gym.Env):
         quiet: bool = False,
         render_mode: str = "none",
         max_viewer_worlds: int = 16,
+        validate: bool = False,
+        fixed_base: bool = False,
         viewer_port: int = 8080,
         viewer_spacing: float = 0.8,
         viewer_output_path: str = "./recordings/lwmr_plane.viser",
     ):
         super().__init__()
+
+        default_waypoints = [
+            np.array([0.5, 0.0]),
+            np.array([0.5, 0.5]),
+            np.array([1.0, 0.5]),
+        ]
+
+        # TODO: consider validating arguments
         self.robot_config = robot_config
-        self.waypoints = waypoints
+        self.waypoints = waypoints if waypoints is not None else default_waypoints
         self.solver_name = solver_name
+        self.add_step = add_step
+        self.n_lookahead = n_lookahead
+        self.hit_radius = hit_radius
+        self.world_bound = world_bound
+        self.max_steps = max_steps
         self.sim_freq = sim_freq
         self.control_freq = control_freq
         self.frame_freq = frame_freq
@@ -55,6 +74,8 @@ class LwmrPlaneEnv(gym.Env):
         self.quiet = quiet
         self.render_mode = render_mode
         self.max_viewer_worlds = max_viewer_worlds
+        self.validate = validate
+        self.fixed_base = fixed_base
         self.viewer_port = viewer_port
         self.viewer_spacing = viewer_spacing
         self.viewer_output_path = viewer_output_path
@@ -62,11 +83,7 @@ class LwmrPlaneEnv(gym.Env):
 
     def _start_simulation(self):
 
-        # TODO:
-        self.max_episode_steps = 256
         self.steps = 0
-
-        # TODO: consider validating arguments
 
         # TODO: clone? per world?
         self.waypoint_index = 0
@@ -93,13 +110,14 @@ class LwmrPlaneEnv(gym.Env):
 
         #
         # region World
-        # (default world -1; collides with all worlds)
+        # Default world -1; collides with all worlds
+        # Use body=-1 to attach shapes to the static world frame
         #
 
         builder = newton.ModelBuilder()
 
-        # Use body=-1 to attach shapes to the static world frame:
-
+        # TODO: explore ground characteristics (friction, restitution, etc in ShapeConfig)
+        # TODO: make environment configuration (e.g., initial conditions, randomization parameters) configurable via kwargs
         # # Set defaults before adding shapes
         # builder.default_shape_cfg.ke = 1.0e6
         # builder.default_shape_cfg.kd = 1000.0
@@ -107,12 +125,6 @@ class LwmrPlaneEnv(gym.Env):
         # builder.default_shape_cfg.is_hydroelastic = True
         # builder.default_shape_cfg.sdf_max_resolution = 64  # Primitive SDF defaults
 
-        # TODO: explore ground characteristics (friction, restitution, etc in ShapeConfig)
-        # TODO: make environment configuration (e.g., initial conditions, randomization parameters) configurable via kwargs
-        # NOTE: The default plane (`.add_ground_plane`) is unsuitable for visualization
-        # plane_size = 0.5
-        # plane_eqn: tuple[float, float, float, float] = *world.up_vector, 0
-        # world.add_shape_plane(body=-1, plane=plane_eqn, width=plane_size, length=plane_size)
         builder.add_ground_plane()
 
         #
@@ -120,13 +132,9 @@ class LwmrPlaneEnv(gym.Env):
         # Create shared world and ground plane
         #
 
-        # TODO: add config
-        # validate_inertia: bool = False,
-        # builder.validate_inertia_detailed = validate_inertia
+        builder.validate_inertia_detailed = self.validate
 
         initial_xform = wp.transform(p=(0.0, 0.0, drop_height))
-        fixed_base = False
-        # fixed_base = True  # TODO: make this configurable and test both cases
 
         robot_builder = newton.ModelBuilder()
 
@@ -134,7 +142,7 @@ class LwmrPlaneEnv(gym.Env):
             robot_builder,
             initial_xform,
             self.robot_config,
-            fixed_base=fixed_base,
+            fixed_base=self.fixed_base,
         )
 
         assert not self.robot_config.add_imu, "IMU is currently not supported."
@@ -142,48 +150,45 @@ class LwmrPlaneEnv(gym.Env):
             # Add an imu at the chassis center
             robot_builder.add_site(body=self.chassis, label="imu")
 
+        assert not self.robot_config.add_camera, "Camera is currently not supported."
+        if self.robot_config.add_camera:
+            robot_builder.add_site(
+                body=self.chassis,
+                xform=wp.transform(
+                    p=wp.vec3(0.5, 0, 0.2),
+                    q=wp.quat_from_axis_angle(wp.vec3(0, 1, 0), 3.14159 / 4),  # type: ignore
+                ),
+                type=newton.GeoType.BOX,
+                scale=(0.05, 0.05, 0.02),
+                visible=True,
+                label="camera",
+            )
+
         assert self.num_worlds == 1, "Multiple worlds are currently not supported."
         for _ in range(self.num_worlds):
             builder.begin_world()
 
-            # Add a step to the world for the robot to drive over
-            # hz = (robot_config.wh_radius / 2.5) * np.random.uniform(0.8, 1.2)
-            hz = (self.robot_config.wh_radius / 5.5) * np.random.uniform(0.8, 1.2)
-            pos = (0.5, 0.0, hz)
-            rot = wp.quat_rpy(0.0, 0.0, np.random.uniform(-0.2, 0.2))
+            if self.add_step:
+                # Add a step to the world for the robot to drive over
+                hz = (self.robot_config.wh_radius / 2.7) * np.random.uniform(0.8, 1.2)
+                pos = (0.5, 0.0, hz)
+                rot = wp.quat_rpy(0.0, 0.0, np.random.uniform(-0.2, 0.2))
 
-            # builder.add_shape_box(
-            #     body=-1,
-            #     hx=0.1,
-            #     hy=0.5,
-            #     hz=hz,
-            #     xform=wp.transform(p=pos, q=rot),
-            #     color=(0.5, 0.5, 0.5),
-            # )
+                builder.add_shape_box(
+                    body=-1,
+                    hx=0.1,
+                    hy=0.5,
+                    hz=hz,
+                    xform=wp.transform(p=pos, q=rot),
+                    color=(0.5, 0.5, 0.5),
+                )
 
             builder.add_builder(robot_builder)
 
             builder.end_world()
 
-        # # Add a site with offset and rotation
-        # camera_site = robot_builder.add_site(
-        #     body=chassis_body,
-        #     xform=wp.transform(
-        #         wp.vec3(0.5, 0, 0.2),  # Position
-        #         wp.quat_from_axis_angle(wp.vec3(0, 1, 0), 3.14159 / 4),  # Orientation
-        #     ),
-        #     type=newton.GeoType.BOX,
-        #     scale=(0.05, 0.05, 0.02),
-        #     visible=True,
-        #     label="camera",
-        # )
-
-        # # TODO: replicate vs vec
-        # # Should this be world.replicate?
-        # num_worlds = 1
-        # builder.replicate(robot_builder, world_count=num_worlds)  # , spacing=(2.0, 0.0, 0.0))
-        # # world.add_world(robot_builder)
-        # # world.color()
+        # NOTE: duplicate worlds can be created more simply with:
+        # builder.replicate(robot_builder, ...)
 
         self.model = builder.finalize(device=self.device)
 
@@ -209,12 +214,10 @@ class LwmrPlaneEnv(gym.Env):
         # region Solver
         #
 
-        # # TODO: support different solvers and configurations (e.g., iterations, tolerance, etc)
-        # assert solver_name == "MuJoCo", f"Unsupported solver: {solver_name}"
+        # TODO: support different solvers and configurations (e.g., iterations, tolerance, etc)
+        assert self.solver_name == "MuJoCo", f"Unsupported solver: {self.solver_name}"
         # using_generalized_coordinates = solver_name in ["MuJoCo", "Featherstone"]
 
-        # TODO: try other solvers
-        # TODO: try other parameter values
         self.solver = newton.solvers.SolverMuJoCo(self.model, iterations=100, ls_iterations=50, njmax=100)
 
         assert self.state_0.joint_q and self.state_0.joint_qd
@@ -237,11 +240,11 @@ class LwmrPlaneEnv(gym.Env):
 
         viewer = None
 
-        assert self.render_mode in self.metadata["render_modes"], (
-            f"Unsupported render mode: {self.render_mode}"
-        )
-        if self.render_mode == "viser":
-            # TODO: warn if `viewer_output_path` already exists and will be overwritten
+        render_mode = self.render_mode.lower() if self.render_mode else "none"
+        assert render_mode in self.metadata["render_modes"], f"Unsupported render mode: {render_mode}"
+
+        if render_mode == "viser":
+            # TODO: log warning if `viewer_output_path` already exists and will be overwritten
             recording_path = Path(self.viewer_output_path).resolve()
             recording_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -289,75 +292,38 @@ class LwmrPlaneEnv(gym.Env):
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
         self.prev_action = np.zeros(4, dtype=np.float32)
 
-        # TODO: replace with actual observation space from the robot
         # chassis linear velocity: (vx, vy)
         # chassis angular velocity: (yaw_rate)
         # heading sincos: (sin(yaw), cos(yaw))
-        # waypoint relative position: (dx, dy, dyaw) * NUM_WAYPOINT_LOOKAHEAD
-        # progress along path: (??)
-        # cross track error: (??)
+        # waypoint relative position: (dx, dy, dd) * self.n_lookahead
+        # progress along path: (index / num_waypoints)
+        # cross track error: (cte)
         # previous action: (4,)
         obs_dim = 2 + 1 + 2 + (3 * 3) + 1 + 1 + 4
-        # obs_dim = 8
         self.observation_space = gym.spaces.Box(low=-inf, high=inf, shape=(obs_dim,))
 
         # region Debug
 
-        # if not quiet:
-        #     print("Number of worlds:", world.world_count)
-        #     print(f"Model finalized (device={self.model.device})")
-        #     print("  Num bodies:", self.model.body_count)
-        #     print("  Num shapes:", self.model.shape_count)
-        #     print("  Num joints:", self.model.joint_count)
-        #     print("State, Contacts and Control objects created")
-        #     print("  State body count:", self.state_0.body_count)
-        #     print("  State joint dof count:", self.state_0.joint_dof_count)
-        #     print(f"  Control size: {self.control.joint_act.size}")
-        #     print("Solver created:", type(self.solver).__name__)
-        #     print("Simulation configured")
-        #     print(f"  Frame rate: {fps} Hz")
-        #     print(f"  Frame dt: {self.frame_dt:.4f} s")
-        #     print(f"  Physics substeps: {self.sim_substeps}")
-        #     print(f"  Physics dt: {self.sim_dt:.4f} s")
+        if not self.quiet:
+            print("Number of worlds:", self.model.world_count)
+            print(f"Model finalized (device={self.model.device})")
+            print("  Num bodies:", self.model.body_count)
+            print("  Num shapes:", self.model.shape_count)
+            print("  Num joints:", self.model.joint_count)
+            print("State, Contacts and Control objects created")
+            print("  State body count:", self.state_0.body_count)
+            print("  State joint dof count:", self.state_0.joint_dof_count)
+            assert self.control.joint_act
+            print("  Control size:", self.control.joint_act.size)
+            print("Solver created:", type(self.solver).__name__)
+            print("Simulation configured")
+            print(f"  Frame dt: {self.frame_dt:.4f} s")
+            print(f"  Physics dt: {self.sim_dt:.4f} s")
 
-        #     if self.graph:
-        #         print("CUDA graph captured for optimized execution")
-        #     else:
-        #         print("Running on CPU (no CUDA graph)")
-
-        # # # NOTE: generalized coordinate (MuJoCo) solvers use joint_q and joint_qd
-        # # #       maximal coordinate solvers (XPBD) use body_q and body_qd
-        # # print(f"self.model.joint_dof_count: {self.model.joint_dof_count}")
-        # # print(f"self.control.joint_f: {self.control.joint_f}")
-        # # print(f"self.control.joint_target_pos: {self.control.joint_target_pos}")
-        # # print(f"self.control.joint_target_vel: {self.control.joint_target_vel}")
-        # # print(f"self.control.joint_act: {self.control.joint_act}")
-        # # print(f"self.state_0.joint_q: {self.state_0.joint_q}")
-        # # print(f"self.state_0.joint_qd: {self.state_0.joint_qd}")
-        # # print(f"self.model.joint_q: {self.model.joint_q}")
-        # # print(f"self.model.joint_qd: {self.model.joint_qd}")
-        # # print(f"self.state_0.body_q: {self.state_0.body_q}")
-        # # print(f"self.state_0.body_qd: {self.state_0.body_qd}")
-        # # print(f"self.model.body_q: {self.model.body_q}")
-        # # print(f"self.model.body_qd: {self.model.body_qd}")
-        # # print(f"self.model.actuators: {self.model.actuators}")
-        # # print("Body worlds:", self.model.body_world.numpy().tolist())
-        # # print("Shape worlds:", self.model.shape_world.numpy().tolist())
-        # # print("Joint worlds:", self.model.joint_world.numpy().tolist())
-        # # print("Joint worlds:", self.model.particle_world.numpy().tolist())
-        # # print("Joint worlds:", self.model.articulation_world.numpy().tolist())
-        # # print("Joint worlds:", self.model.equality_constraint_world.numpy().tolist())
-
-        # # # rigid bodies
-        # # if self.body_count:
-        # #     s.body_q = wp.clone(self.body_q, requires_grad=requires_grad)
-        # #     s.body_qd = wp.clone(self.body_qd, requires_grad=requires_grad)
-        # #     s.body_f = wp.zeros_like(self.body_qd, requires_grad=requires_grad)
-
-        # # # joints
-        # # if self.joint_count:
-        # #     s.joint_q = wp.clone(self.joint_q, requires_grad=requires_grad)
-        # #     s.joint_qd = wp.clone(self.joint_qd, requires_grad=requires_grad)
+            if self.graph:
+                print("CUDA graph captured for optimized execution")
+            else:
+                print("Running on CPU (no CUDA graph)")
 
     # region Observation
 
@@ -418,11 +384,11 @@ class LwmrPlaneEnv(gym.Env):
 
     def _get_obs(self) -> ObsType:
 
-        # TODO: figure out frequency of sensor updates and cache
-
-        # imu.update(state)
-        # acc = imu.accelerometer.numpy()   # (n_sensors, 3) linear acceleration
-        # gyro = imu.gyroscope.numpy()      # (n_sensors, 3) angular velocity
+        # TODO: add config for frequency of sensor updates and cache
+        if self.robot_config.add_imu:
+            self.imu.update(self.state_0)
+            # acc = self.imu.accelerometer.numpy()  # (n_sensors, 3) linear acceleration
+            # gyro = self.imu.gyroscope.numpy()  # (n_sensors, 3) angular velocity
 
         # TODO: remove asserts? check performance implications
         assert self.state_0.body_q
@@ -440,8 +406,8 @@ class LwmrPlaneEnv(gym.Env):
         cross_track_error = self._cross_track_error(pos[:2])
 
         # Relative waypoints (body frame), padded if past end
-        rel = np.zeros((self.N_LOOKAHEAD, 3), dtype=np.float32)
-        for k in range(self.N_LOOKAHEAD):
+        rel = np.zeros((self.n_lookahead, 3), dtype=np.float32)
+        for k in range(self.n_lookahead):
             idx = self.waypoint_index + k
             if idx < len(self.waypoints):
                 d_world = self.waypoints[idx] - pos[:2]
@@ -470,15 +436,25 @@ class LwmrPlaneEnv(gym.Env):
         return obs
 
     def _get_info(self) -> InfoType:
-        assert self.state_0.body_q
-        q = self.state_0.body_q.numpy()[self.chassis]
-        assert self.state_0.body_qd
-        qd = self.state_0.body_qd.numpy()[self.chassis]
-        return {
-            "pos": q[:3],
+        q = self.state_0.body_q.numpy()[self.chassis]  # type: ignore
+        qd = self.state_0.body_qd.numpy()[self.chassis]  # type: ignore
+
+        widx = self.waypoint_index
+        target = self.waypoints[widx] if widx < len(self.waypoints) else np.array([0.0, 0.0])
+        dist = float(np.linalg.norm(target - q[:2])) if widx < len(self.waypoints) else 0.0
+
+        info = {
+            "pos": q[:2],
             "yaw": quat_to_rpy(q[3:])[2],
-            "vel": qd[:3],
+            "vel": qd[:2],
+            "dist": dist,
         }
+
+        if dist < self.hit_radius:
+            self.waypoint_index += 1
+            info["event"] = "finished" if self.waypoint_index >= len(self.waypoints) else "waypoint_hit"
+
+        return info
 
     # region Reset
 
@@ -487,6 +463,7 @@ class LwmrPlaneEnv(gym.Env):
         # TODO: don't reset sim_time if specified (useful for visualization and debugging)
         # self.sim_time = 0.0
 
+        # issac will do a complete tear down and reinitialization similarly to this
         if self.steps != 0:
             self.prev_action = np.zeros(4, dtype=np.float32)
             self.waypoint_index = 0
@@ -494,15 +471,11 @@ class LwmrPlaneEnv(gym.Env):
             self.prev_segment_progress = None
             self.steps = 0
             self._start_simulation()
-        # issac will do a complete tear down and reinitialization
-        # cls.start_simulation()
-        # cls.initialize_solver()
-
-        # self._np_random, _ = gym.utils.seeding.np_random(seed)
 
         """
         Must reset
         - state, control, actuator, contacts, ?solver?
+        self._np_random, _ = gym.utils.seeding.np_random(seed)
         """
 
         obs = self._get_obs()
@@ -515,7 +488,7 @@ class LwmrPlaneEnv(gym.Env):
     def _simulate(self) -> None:
 
         for _ in range(self.sim_steps_per_frame):
-            # NOTE: this structure does not account for control delay
+            # Not accounting for control delay
             if self.control_steps_counter >= self.sim_steps_per_control:
                 self.control_steps_counter = 0
                 assert self.control.joint_f
@@ -537,269 +510,20 @@ class LwmrPlaneEnv(gym.Env):
             )
             self.state_0, self.state_1 = self.state_1, self.state_0
 
-    N_LOOKAHEAD = 3
-    HIT_RADIUS = 0.01  # distance threshold for waypoint "hit"
-    WORLD_BOUND = 20.0  # crash if |pos| exceeds this
-    # MAX_LIN_ACC = 4.0  # m/s^2 commanded by throttle = 1
-    # MAX_YAW_RATE = 2.5  # rad/s commanded by steering = 1
-    # LIN_DRAG = 0.5  # simple drag so velocity doesn't explode
-
-    W_PROGRESS = 1.0
-    W_HIT = 10.0
-    W_CTE = 0.1
-    W_HEADING = 0.05
-    W_ACTION = 0.01
-    W_TIME = 0.002
-    W_CRASH = 50.0
-    W_FINISH = 100.0
-
-    def _compute_reward(self, action, crashed, pos, yaw):
+    def _compute_reward(self) -> tuple[float, InfoType]:
         info = {}
-
-        MAX_DIST_TO_TARGET = 1.0
-
-        target = self.waypoints[self.waypoint_index].astype(np.float32)
-        dist_to_target = float(np.linalg.norm(target - pos))
-        # dist_to_target = min(dist_to_target, MAX_DIST_TO_TARGET)
-        # reward = (MAX_DIST_TO_TARGET - dist_to_target) / MAX_DIST_TO_TARGET
-        # reward = float(np.mean(action))
-
-        velocity = self.state_0.body_qd.numpy()[self.chassis][:2]
-        target_velocity = np.array([0.25, 0.0], dtype=np.float32)
-        velocity_error = velocity - target_velocity
-        velocity_error_reward = 1 - np.tanh(5 * np.linalg.norm(velocity_error))
-        reward = velocity_error_reward
-
-        terminated = dist_to_target < self.HIT_RADIUS
-
-        return reward, info, terminated
-
-        # ----------------------------
-        # Tunable reward constants
-        # ----------------------------
-        R_CRASH = -500.0
-
-        R_PROGRESS_FWD = 20.0  # reward per meter of forward path progress
-        R_PROGRESS_BACK = 40.0  # penalty per meter of backward path progress
-
-        R_WAYPOINT = 150.0  # bonus per waypoint reached
-        R_FINISH = 1000.0  # terminal completion bonus
-
-        R_TIME = -0.01  # per-step penalty
-        R_ACTION = -0.001  # small effort penalty
-
-        R_CTE = -0.10  # cross-track penalty coefficient
-        CTE_CLIP = 2.0  # cap cross-track penalty magnitude
-
-        # Optional anti-stall term.
-        R_STALL = -0.02
-        MIN_SPEED = 0.05
-
-        # ----------------------------
-        # Terminal failure
-        # ----------------------------
-        if crashed:
-            return R_CRASH, {"event": "crash"}, True
-
-        # ----------------------------
-        # Already finished
-        # ----------------------------
-        if self.waypoint_index >= len(self.waypoints):
-            return R_FINISH, {"event": "finish"}, True
-
-        # pos = self.pos.astype(np.float32)
-        action = np.asarray(action, dtype=np.float32)
-
-        target = self.waypoints[self.waypoint_index].astype(np.float32)
-        dist_to_target = float(np.linalg.norm(target - pos))
-
-        # ----------------------------
-        # Segment start/end
-        # ----------------------------
-        # For the first segment, use the true episode start if available.
-        # Otherwise default to origin.
-        if self.waypoint_index == 0:
-            if hasattr(self, "start_pos"):
-                a = self.start_pos.astype(np.float32)
-            else:
-                a = np.zeros(2, dtype=np.float32)
-        else:
-            a = self.waypoints[self.waypoint_index - 1].astype(np.float32)
-
-        b = target
-        ab = b - a
-        seg_len = float(np.linalg.norm(ab)) + 1e-8
-        ab_hat = ab / seg_len
-
-        # Progress along current segment, in meters.
-        raw_segment_progress = float(np.dot(pos - a, ab_hat))
-        segment_progress = float(np.clip(raw_segment_progress, 0.0, seg_len))
-
-        # ----------------------------
-        # 1. Forward path progress
-        # ----------------------------
-        if not hasattr(self, "prev_segment_progress") or self.prev_segment_progress is None:
-            delta_progress = 0.0
-        else:
-            delta_progress = segment_progress - self.prev_segment_progress
-
-        self.prev_segment_progress = segment_progress
-
-        if delta_progress >= 0.0:
-            progress_r = R_PROGRESS_FWD * delta_progress
-        else:
-            progress_r = R_PROGRESS_BACK * delta_progress
-
-        # ----------------------------
-        # 2. Waypoint hit / finish
-        # ----------------------------
-        hit_r = 0.0
-        finish_r = 0.0
-        terminated = False
-
-        if dist_to_target < self.HIT_RADIUS:
-            hit_r = R_WAYPOINT
-            self.waypoint_index += 1
-
-            # Reset progress baseline for the next segment.
-            self.prev_segment_progress = None
-
-            info["event"] = "waypoint_hit"
-
-            if self.waypoint_index >= len(self.waypoints):
-                finish_r = R_FINISH
-                terminated = True
-                info["event"] = "finish"
-
-        # ----------------------------
-        # 3. Time penalty
-        # ----------------------------
-        time_r = R_TIME
-
-        # ----------------------------
-        # 4. Action penalty
-        # ----------------------------
-        action_r = R_ACTION * float(np.sum(np.square(action)))
-
-        # ----------------------------
-        # 5. Cross-track penalty, clipped
-        # ----------------------------
-        # Important: clipped so that a successful but imperfect trajectory
-        # cannot get destroyed by one large CTE term.
-        cte = float(self._cross_track_error(pos))
-        cte_abs_clipped = min(abs(cte), CTE_CLIP)
-        cte_r = R_CTE * cte_abs_clipped
-
-        # ----------------------------
-        # 6. Small anti-stall penalty
-        # ----------------------------
-        if hasattr(self, "vel_world"):
-            speed = float(np.linalg.norm(self.vel_world))
-        else:
-            speed = 0.0
-
-        if not terminated and dist_to_target > self.HIT_RADIUS and speed < MIN_SPEED:
-            stall_r = R_STALL
-        else:
-            stall_r = 0.0
-
-        # ----------------------------
-        # Total
-        # ----------------------------
-        reward = progress_r + hit_r + finish_r + time_r + action_r + cte_r + stall_r
-
-        info.update(
-            {
-                "dist": dist_to_target,
-                "waypoint_index": self.waypoint_index,
-                "raw_segment_progress": raw_segment_progress,
-                "segment_progress": segment_progress,
-                "delta_progress": delta_progress,
-                "progress_r": progress_r,
-                "hit_r": hit_r,
-                "finish_r": finish_r,
-                "time_r": time_r,
-                "action_r": action_r,
-                "cte": cte,
-                "cte_r": cte_r,
-                "stall_r": stall_r,
-                "speed": speed,
-                "reward": float(reward),
-            }
-        )
-
-        return float(reward), info, terminated
-
-    def _compute_reward2(self, action, crashed, pos, yaw, info):
-
-        if crashed:
-            info["event"] = "crash"
-            return -self.W_CRASH, True
-
-        if self.waypoint_index >= len(self.waypoints):
-            info["event"] = "finish"
-            return self.W_FINISH, True
-
-        target = self.waypoints[self.waypoint_index]
-        dist = float(np.linalg.norm(target - pos))
-
-        # 1. Potential-based progress
-        if self.prev_dist is None:
-            progress_r = 0.0
-        else:
-            progress_r = self.W_PROGRESS * (self.prev_dist - dist)
-        self.prev_dist = dist
-
-        # 2. Waypoint hit
-        hit_r = 0.0
-        if dist < self.HIT_RADIUS:
-            hit_r = self.W_HIT
-            self.waypoint_index += 1
-            self.prev_dist = None
-            info["event"] = "waypoint_hit"
-
-        # 3. Cross-track penalty
-        cte_r = -self.W_CTE * abs(self._cross_track_error(pos))
-
-        # 4. Heading alignment toward current target
-        if self.waypoint_index < len(self.waypoints):
-            tgt = self.waypoints[self.waypoint_index]
-            desired = np.arctan2(tgt[1] - pos[1], tgt[0] - pos[0])
-            err = np.arctan2(np.sin(desired - yaw), np.cos(desired - yaw))
-            heading_r = self.W_HEADING * np.cos(err)
-        else:
-            heading_r = 0.0
-
-        # 5. Action effort
-        action_r = -self.W_ACTION * float(np.sum(np.square(action)))
-
-        # 6. Time
-        time_r = -self.W_TIME
-
-        reward = progress_r + hit_r + cte_r + heading_r + action_r + time_r
-
-        terminated = self.waypoint_index >= len(self.waypoints)
-        if terminated:
-            reward += self.W_FINISH
-            info["event"] = "finish"
-
-        info["dist"] = dist
-        info["waypoint_index"] = self.waypoint_index
-
-        return reward, terminated
+        reward = float(np.mean(self.action))
+        return reward, info
 
     def step(self, action: NDArray) -> tuple[ObsType, float, bool, bool, InfoType]:
 
         action = np.asarray(action, dtype=np.float32)
 
         if not np.all(np.isfinite(action)):
-            print("BAD incoming action:", action)
             raise RuntimeError("Non-finite action received by env")
 
-        action = np.clip(action, self.action_space.low, self.action_space.high)
-
+        action = np.clip(action, self.action_space.low, self.action_space.high)  # type: ignore
         self.action = action.copy()
-
         motors = action * 12.0
 
         self.actuation_values[self.actuator_indices] = np.tile(motors, self.model.world_count)  # type: ignore
@@ -816,27 +540,18 @@ class LwmrPlaneEnv(gym.Env):
         obs = self._get_obs()
         info = self._get_info()
 
-        # TODO: figure out crashing conditions (e.g., flipped over, out of bounds, etc)
-        # crashed = np.any(np.abs(self.pos) > self.WORLD_BOUND)
-        crashed = False
-
-        q = self.state_0.body_q.numpy()[self.chassis]
-        pos = q[:2]
-        _, _, yaw = quat_to_rpy(q[3:])
-        reward, reward_info, terminated = self._compute_reward(action, crashed, pos, yaw)
+        reward, reward_info = self._compute_reward()
         info.update(reward_info)
 
-        # TODO: figure out termination conditions
-        truncated = self.steps >= self.max_episode_steps and not terminated
+        at_end = self.waypoint_index >= len(self.waypoints)
+        out_of_bounds = np.any(np.abs(info["pos"]) > self.world_bound)
+        terminated = at_end or out_of_bounds
+
+        truncated = self.steps >= self.max_steps and not terminated
 
         self.prev_action = action
 
         return obs, float(reward), bool(terminated), bool(truncated), info
-
-        reward = 0.0
-        terminated = False
-        truncated = False
-        return obs, reward, terminated, truncated, info
 
     # region render
     def render(self, mode="viser") -> RenderFrame | list[RenderFrame] | None:
