@@ -118,6 +118,7 @@ Timings for
 - simulation step (forward dynamics, collision detection, constraint solving)
 - rendering step (CPU and GPU times)
 - control step
+- sensors
 
 - custom controller/actuator for tutorial?
 
@@ -141,48 +142,19 @@ Requirements/recommendations for a mobile base
 - Convert from maximal to generalized coordinates with `newton.eval_ik`
 - ["MuJoCo Warp as the primary solver for rigid body dynamics"](https://github.com/newton-physics/newton/discussions/639)
 
-```python
-using_generalized_coordinates = solver_name in ["MuJoCo", "Featherstone"]
-
-# Main builder for the shared ground plane
-world = newton.ModelBuilder(...)
-world.current_env_group = -1
-world.add_ground_plane()
-
-# Create an independent builder for the scene so that it can be duplicated
-scene = newton.ModelBuilder(...)
-scene.add_articulation(...)
-root_body = scene.add_body(...)
-scene.add_shape_*(root_body, ...)
-# NOTE: it is okay to add a free joint even when using maximal coordinates
-if using_generalized_coordinates: scene.add_joint_free(root_body, ...)
-
-# Add multiple instances of the scene to the world
-for i in range(num_envs):
-  world.add_builder(scene, xform=..., ...)
-
-model = world.finalize()
-
-# isinstance(solver, SolverMuJoCo | SolverFeatherstone)
-
-if not using_generalized_coordinates: newton.eval_ik(model, state_0, state_0.joint_q, state_0.joint_qd)
-```
-
-
 ## Control
 
 - Control fields
   - `self.model.joint_dof_count` is the number of degrees of freedom (DOF) for all joints in the model
   - `self.control.joint_f` is the force/torque applied to each joint
   - `self.control.joint_target` is the target position for each joint (position or velocity depending on mode)
-- State fields (this might not work)
+- State fields
   - `self.state_0.joint_q` is the position of each joint
   - `self.state_0.joint_qd` is the velocity of each joint
 
 
 ## Bugs/fixes/features
 
-- set width and length of plane in add_ground_plane
 - builder.add_shape_box does not use is_static=True when mass is 0
 - export compute_box_inertia in newton.geometry
 - `world.plot_articulation()` should allow plotting to a file
@@ -195,31 +167,21 @@ Axes
 - time (s)
 
 Timesteps for
-- rendering (`frame_dt = 1.0 / render_fps`)
+- simulation
+- rendering (must be multiple of simulation steps)
+- control (must be multiple of simulation steps)
+- sensor updates (must be multiple of simulation steps)
 
-sim_freq
-control_freq
-
-elapsed_steps
-
-elapsed_time
-
-
-Here are the notable parts (I am controlling based on velocity, not position, you'll probably want position control instead):
+Actuators
 1. Create a joint: builder.add_joint_*(...)
 2. Create an actuator: builder.add_actuator(...)
 3. Set the target: wp.copy(self.control.joint_target_vel, wp.array(self.actuation_values))
 4. Step the actuator: actuator.step(self.state_0, self.control, dt=self.frame_dt)
 
 
-# Always have the source handy
-❯ git clone --depth 1 --branch develop https://github.com/isaac-sim/IsaacLab
 
 
 
-`NewtonManager`
-- `_solver_dt = 1.0 / 200.0`
-- `_num_substeps = 1`
 
 what information will the robot have? (proprioception? cameras? lidar? pose?)
 
@@ -236,12 +198,6 @@ try to keep all sim step operations on the gpu
 should `reset` take a batched input for vectorised environments?
 
 
-Opinionated python
-- `tyro`
-- `tqdm` or
-- `@dataclass` for config
-- wandb
-- tensorboard
 - checkpoints
 
 def _set_seed(self, seed: int | None) -> None:
@@ -256,3 +212,32 @@ if done, then either reset or don't process input?
 
 
 use info to plot path
+
+create notebook to test sb3 model
+
+input/output scaling
+
+
+
+discuss
+        self,
+        # TODO: this is only for compatibility with rllib
+        config=None,
+        *,
+        robot_config: LwmrRobotConfig = LwmrRobotConfig(),
+        waypoints: list[WaypointType] | None = None,
+        solver_name: str = "MuJoCo",
+        max_steps: int = 256,
+        sim_freq: int = 600,
+        control_freq: int = 5,
+        frame_freq: int | None = None,
+        num_worlds: int = 1,
+        device: str = "cuda",
+        quiet: bool = False,
+        render_mode: str = "none",
+        max_viewer_worlds: int = 16,
+        validate: bool = False,
+        fixed_base: bool = False,
+        viewer_port: int = 8080,
+        viewer_spacing: float = 0.8,
+        viewer_output_path: str = "./recordings/lwmr_plane.viser",
