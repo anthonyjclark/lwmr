@@ -19,6 +19,7 @@ _sandbox/
 runs/
 checkpoints/
 *.zip
+tutorial/docs/
 
 # Manually add if desired, but ignore by default
 recordings/
