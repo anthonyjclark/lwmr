@@ -3,6 +3,7 @@ import numpy as np
 
 
 def create_viewer_viser(rec_path: str, quiet: bool = True, port: int = 8080) -> newton.viewer.ViewerViser:
+    import warp as wp
 
     if quiet:
         import rich
@@ -12,6 +13,18 @@ def create_viewer_viser(rec_path: str, quiet: bool = True, port: int = 8080) -> 
             viewer = newton.viewer.ViewerViser(record_to_viser=rec_path, verbose=False, port=port)
     else:
         viewer = newton.viewer.ViewerViser(record_to_viser=rec_path, port=port)
+
+    axes = [
+        ("x-axes", (1.0, 0.0, 0.001)),
+        ("y-axes", (0.0, 1.0, 0.001)),
+        ("z-axes", (0.0, 0.0, 1.0)),
+    ]
+
+    # Add axes to the viewer for reference
+    for label, axis in axes:
+        starts = wp.array([wp.vec3(0, 0, 0.001)])
+        ends = wp.array([wp.vec3(*axis)])
+        viewer.log_arrows(label, starts, ends, axis, width=0.04)
 
     return viewer
 

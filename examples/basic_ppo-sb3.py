@@ -28,9 +28,11 @@ class Args:
 if __name__ == "__main__":
     args = tyro.cli(Args)
 
+    verbose = 0 if args.quiet else 1
+
     env_kwargs = {"quiet": args.quiet, "render_mode": "none"}
     env = make_vec_env("lwmr/Lwmr-v0", n_envs=args.n_envs, vec_env_cls=SubprocVecEnv, env_kwargs=env_kwargs)
-    model = PPO("MlpPolicy", env, n_steps=args.n_steps, verbose=1, device=args.device)
+    model = PPO("MlpPolicy", env, n_steps=args.n_steps, verbose=verbose, device=args.device)
     model.learn(total_timesteps=args.total_timesteps, progress_bar=True)
     model.save(args.model_path)
 

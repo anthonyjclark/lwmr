@@ -254,18 +254,6 @@ class LwmrPlaneEnv(gym.Env):
             viewer.set_model(self.model, max_worlds=max_viewer_worlds)
             viewer.set_world_offsets(spacing=(self.viewer_spacing, self.viewer_spacing, 0.0))
 
-            axes = [
-                ("x-axes", (1.0, 0.0, 0.001)),
-                ("y-axes", (0.0, 1.0, 0.001)),
-                ("z-axes", (0.0, 0.0, 1.0)),
-            ]
-
-            # Add axes to the viewer for reference
-            for label, axis in axes:
-                starts = wp.array([wp.vec3(0, 0, 0.001)])
-                ends = wp.array([wp.vec3(*axis)])
-                viewer.log_arrows(label, starts, ends, axis, width=0.04)
-
             # Set the initial camera pose (this is a bit of a workaround)
             viewer._server.initial_camera.position = (-0.748, -0.626, 0.576)
             viewer._server.initial_camera.look_at = (0.000, 0.000, 0.000)
@@ -562,7 +550,6 @@ class LwmrPlaneEnv(gym.Env):
 
     # region close
     def close(self) -> None:
-        # self.viewer.save_recording()
         # TODO: handle "(viser) Server stopped" message at start somehow
         if self.viewer:
             self.viewer.close()
