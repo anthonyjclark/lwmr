@@ -5,5 +5,8 @@
         "**/.venv": true,
         "**/__pycache__": true,
         "**/.ipynb_checkpoints": true,
-    }
+    },
+    "cSpell.words": [
+        "lwmr"
+    ]
 }
