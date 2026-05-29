@@ -432,9 +432,9 @@ class LwmrPlaneEnv(gym.Env):
         dist = float(np.linalg.norm(target - q[:2])) if widx < len(self.waypoints) else 0.0
 
         info = {
-            "pos": q[:2],
+            "pos": q[:2].copy(),
             "yaw": quat_to_rpy(q[3:])[2],
-            "vel": qd[:2],
+            "vel": qd[:2].copy(),
             "dist": dist,
         }
 
