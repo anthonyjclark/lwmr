@@ -6,6 +6,7 @@ import tyro
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
+from tqdm.auto import trange
 
 
 @dataclass
@@ -41,7 +42,7 @@ if __name__ == "__main__":
 
     obs = env.reset()
     obs = obs[0]
-    for _ in range(args.eval_steps):
+    for _ in trange(args.eval_steps):
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, dones, info, blah = env.step(action)
         env.render()
