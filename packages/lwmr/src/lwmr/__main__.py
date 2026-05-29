@@ -18,7 +18,7 @@ class Args:
 
 args = tyro.cli(Args)
 
-env = gym.make("lwmr/Lwmr-v0", quiet=args.quiet)
+env = gym.make("lwmr/Lwmr-v0", quiet=args.quiet, device=args.device)
 env.reset()
 env.step(env.action_space.sample())
 env.close()
