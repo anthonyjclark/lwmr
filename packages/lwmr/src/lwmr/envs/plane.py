@@ -51,6 +51,9 @@ class LwmrPlaneEnv(gym.Env):
     ):
         super().__init__()
 
+        # Set global quiet mode for Warp before newton is initialized
+        wp.config.quiet = quiet
+
         default_waypoints = [
             np.array([0.5, 0.0]),
             np.array([0.5, 0.5]),
@@ -87,9 +90,6 @@ class LwmrPlaneEnv(gym.Env):
 
         # TODO: clone? per world?
         self.waypoint_index = 0
-
-        # Set global quiet mode for Warp before newton is initialized in the environment
-        wp.config.quiet = self.quiet
 
         # `frame_freq` is related to both `step()` and `render()`
         frame_freq = self.frame_freq if self.frame_freq is not None else self.metadata["render_fps"]
