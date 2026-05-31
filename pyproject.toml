@@ -32,3 +32,10 @@ sb3-contrib = { git = "https://github.com/Stable-Baselines-Team/stable-baselines
 [tool.ruff]
 line-length = 110
 extend-select = ["I"]
+
+[tool.setuptools]
+package-dir = {"" = "packages"}
+
+[tool.setuptools.packages.find]
+where = ["packages"]
+include = ["lwmr*"]
