@@ -7,6 +7,7 @@ import newton
 import numpy as np
 import warp as wp
 from gymnasium.core import RenderFrame
+from loguru import logger
 from newton.sensors import SensorIMU
 from numpy.typing import NDArray
 
@@ -60,6 +61,10 @@ class LwmrPlaneEnv(gym.Env):
             np.array([1.0, 0.5]),
         ]
 
+        if device.startswith("cuda") and not wp.get_device().is_cuda:
+            logger.warning("CUDA device specified but not available, falling back to CPU")
+            device = "cpu"
+
         # TODO: consider validating arguments
         self.robot_config = robot_config
         self.waypoints = waypoints if waypoints is not None else default_waypoints
@@ -73,7 +78,7 @@ class LwmrPlaneEnv(gym.Env):
         self.control_freq = control_freq
         self.frame_freq = frame_freq
         self.num_worlds = num_worlds
-        self.device = device if device == "cuda" and wp.get_device().is_cuda else "cpu"
+        self.device = device
         self.quiet = quiet
         self.render_mode = render_mode
         self.max_viewer_worlds = max_viewer_worlds
