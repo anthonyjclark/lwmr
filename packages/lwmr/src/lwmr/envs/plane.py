@@ -48,7 +48,7 @@ class LwmrPlaneEnv(gym.Env):
         fixed_base: bool = False,
         viewer_port: int = 8080,
         viewer_spacing: float = 0.8,
-        viewer_output_path: str = "./recordings/lwmr_plane.viser",
+        viewer_output_path_stem: str = "./recordings/lwmr_plane",
     ):
         super().__init__()
 
@@ -86,7 +86,7 @@ class LwmrPlaneEnv(gym.Env):
         self.fixed_base = fixed_base
         self.viewer_port = viewer_port
         self.viewer_spacing = viewer_spacing
-        self.viewer_output_path = viewer_output_path
+        self.viewer_output_path = viewer_output_path_stem
         self._start_simulation()
 
     def _start_simulation(self):
@@ -169,7 +169,7 @@ class LwmrPlaneEnv(gym.Env):
                 label="camera",
             )
 
-        assert self.num_worlds == 1, "Multiple worlds are currently not supported."
+        # assert self.num_worlds == 1, "Multiple worlds are currently not supported."
         for _ in range(self.num_worlds):
             builder.begin_world()
 
@@ -289,8 +289,10 @@ class LwmrPlaneEnv(gym.Env):
         # num_actuators_per_world...
 
         # Control the four wheel motors
-        num_actuators = len(self.actuators[0].indices)
-        assert num_actuators == 4, f"Expected 4 actuators, but got {num_actuators}"
+        # num_acts = len(self.actuators[0].indices) * self.model.world_count
+        # num_worlds = self.model.world_count
+        # num_act_expected = 4 * num_worlds
+        # assert num_acts == num_act_expected, f"Expected {num_act_expected} actuators,  got {num_acts}"
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(4,))
         self.prev_action = np.zeros(4, dtype=np.float32)
 

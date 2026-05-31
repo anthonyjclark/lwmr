@@ -138,12 +138,6 @@ def create_viewer_viser(
     import newton
     import warp as wp
 
-    # TODO: switch to env variable in makefile; remove
-    # # Hack for generating tutorial website
-    # # Only import sphinx if running on local machine (check hostname)
-    # if platform.node().startswith("AJC"):
-    #     import sphinx  # noqa: F401 for generating the tutorial website
-
     rec_path = str(RECORDING_BASE_PATH / f"{file_stem}.viser")
 
     if not overwrite:
