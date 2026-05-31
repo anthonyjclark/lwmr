@@ -1,13 +1,34 @@
 {
-    "files.exclude": {
-        "**/.git": true,
-        "**/.DS_Store": true,
-        "**/.venv": true,
-        "**/__pycache__": true,
-        "**/.ipynb_checkpoints": true,
-    },
-    "cSpell.words": [
-        "lwmr",
-        "viser"
-    ]
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/.venv": true,
+    "**/__pycache__": true,
+    "**/.ipynb_checkpoints": true
+  },
+  "cSpell.words": [
+    "actgravcomp",
+    "Emika",
+    "Franka",
+    "implicitfast",
+    "impratio",
+    "jupyterlab",
+    "loguru",
+    "lwmr",
+    "MUJOCO",
+    "nbsphinx",
+    "nconmax",
+    "njmax",
+    "rllib",
+    "setuptools",
+    "substep",
+    "SUBSTEPS",
+    "tensorboard",
+    "torchrl",
+    "trange",
+    "urdf",
+    "vels",
+    "viser",
+    "xform"
+  ]
 }
