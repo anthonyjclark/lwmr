@@ -12,7 +12,7 @@ from newton.sensors import SensorIMU
 from numpy.typing import NDArray
 
 from ..robot import LwmrRobotConfig, add_lwmr_robot
-from .utils import create_viewer_viser, quat_to_rpy, world_to_body
+from ..utils import create_viewer_viser, quat_to_rpy, world_to_body
 
 ObsType = NDArray
 InfoType = dict[str, Any]
@@ -25,7 +25,7 @@ class LwmrPlaneEnv(gym.Env):
 
     def __init__(
         self,
-        # TODO: this is only for compatibility with rllib
+        # This is for compatibility with rllib
         config=None,
         *,
         robot_config: LwmrRobotConfig = LwmrRobotConfig(),
@@ -249,14 +249,23 @@ class LwmrPlaneEnv(gym.Env):
         assert render_mode in self.metadata["render_modes"], f"Unsupported render mode: {render_mode}"
 
         if render_mode == "viser":
-            # TODO: log warning if `viewer_output_path` already exists and will be overwritten
+            if not self.quiet and Path(self.viewer_output_path).exists():
+                print(f"Warning: {self.viewer_output_path} already exists and will be overwritten.")
+
             recording_path = Path(self.viewer_output_path).resolve()
             recording_path.parent.mkdir(parents=True, exist_ok=True)
 
-            viewer = create_viewer_viser(str(recording_path), quiet=self.quiet, port=self.viewer_port)
-
             max_viewer_worlds = min(self.model.world_count, self.max_viewer_worlds)
-            viewer.set_model(self.model, max_worlds=max_viewer_worlds)
+
+            viewer = create_viewer_viser(
+                str(recording_path),
+                self.model,
+                quiet=self.quiet,
+                port=self.viewer_port,
+                overwrite=True,
+                max_worlds=max_viewer_worlds,
+            )
+
             viewer.set_world_offsets(spacing=(self.viewer_spacing, self.viewer_spacing, 0.0))
 
             # Set the initial camera pose (this is a bit of a workaround)
