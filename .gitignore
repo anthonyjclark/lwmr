@@ -24,3 +24,6 @@ tutorial/docs/
 # Manually add if desired, but ignore by default
 recordings/
 *.png
+# pixi environments
+.pixi/*
+!.pixi/config.toml

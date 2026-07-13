@@ -1,0 +1,21 @@
+[workspace]
+authors = ["Anthony J. Clark <anthonyjclark@gmail.com>"]
+channels = ["conda-forge"]
+name = "lwmr"
+version = "0.1.0"
+platforms = [ { platform = "linux-64", cuda = "12.*" } ]
+
+[tasks]
+
+[dependencies]
+python = "3.12.*"
+pytorch-gpu = ">=2.12.0,<3"
+
+newton-all = ">=1.3.0,<2"
+
+gymnasium = ">=1.3.0,<2"
+loguru = ">=0.7.3,<0.8"
+tyro = ">=1.0.15,<2"
+
+[pypi-dependencies]
+lwmr = { path = "./packages/lwmr/", editable = true }

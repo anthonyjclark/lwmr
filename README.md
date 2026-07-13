@@ -2,6 +2,8 @@
 
 ## Initial Setup
 
+### Using Uv
+
 ```bash
 # From inside your project directory
 uv init --python 3.13 --bare
@@ -22,4 +24,18 @@ uv run -m newton.examples
 # Create packages and add them to the project
 uv init --package packages/lwmr
 uv add --editable packages/lwmr
+```
+
+### Using Pixi
+
+These instructions assume that the project was already created using uv. I am just adding support for installing with pixi.
+
+```bash
+pixi init . --format pixi
+# See pixi.toml for manually added platform
+pixi add python=3.12
+pixi add pytorch-gpu
+pixi add newton-all gymnasium loguru tyro
+
+pixi run python -m lwmr
 ```
