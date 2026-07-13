@@ -3,7 +3,7 @@ authors = ["Anthony J. Clark <anthonyjclark@gmail.com>"]
 channels = ["conda-forge"]
 name = "lwmr"
 version = "0.1.0"
-platforms = [ { platform = "linux-64", cuda = "12.*" } ]
+platforms = [ { platform = "linux-64", cuda = "12" } ]
 
 [tasks]
 

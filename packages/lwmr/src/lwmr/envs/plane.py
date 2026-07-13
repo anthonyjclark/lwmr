@@ -341,7 +341,10 @@ class LwmrPlaneEnv(gym.Env):
         b = self.waypoints[self.waypoint_index]
         ab = b - a
         L = float(np.linalg.norm(ab)) + 1e-8
-        return float(np.cross(ab, pos - a)) / L
+        x = ab
+        y = pos - a
+        cross2d = x[..., 0] * y[..., 1] - x[..., 1] * y[..., 0]
+        return float(cross2d) / L
 
     def _get_obs2(self) -> ObsType:
         assert self.state_0.body_q

@@ -1,5 +1,17 @@
 # Legged-Wheeled Mobile Robot
 
+## Setup
+
+If using uv...
+
+If using pixi: `pixi install`
+
+## Testing Setup
+
+```bash
+pixi run python -m lwmr
+```
+
 ## Initial Setup
 
 ### Using Uv
@@ -36,6 +48,4 @@ pixi init . --format pixi
 pixi add python=3.12
 pixi add pytorch-gpu
 pixi add newton-all gymnasium loguru tyro
-
-pixi run python -m lwmr
 ```
