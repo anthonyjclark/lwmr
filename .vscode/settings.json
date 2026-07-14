@@ -19,6 +19,7 @@
     "nbsphinx",
     "nconmax",
     "njmax",
+    "PYPI",
     "rllib",
     "setuptools",
     "substep",
