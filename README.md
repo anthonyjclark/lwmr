@@ -1,3 +1,5 @@
+
+
 # Legged-Wheeled Mobile Robot
 
 Note: we are switching to `pixi` for managing packages since our HPC is out of date and incompatible with PYPI packages.
@@ -23,12 +25,12 @@ pixi run python -m lwmr
 cd tutorial
 
 # Run the basic example
-python basic_gym.py --quiet --steps 200
+pixi run python basic_gym.py --quiet --steps 200
 
 # Serve the visualization
 # (Consider doing so in a separate terminal so that you can rerun the simulation without restarting the server.)
 # (Use port forwarding when running on the HPC: `ssh -L PORT:localhost:PORT USER@SERVER`)
-python -m http.server
+pixi run python -m http.server 8000
 ```
 
 ### Initial Project Setup
