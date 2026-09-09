@@ -29,6 +29,9 @@ cd tutorial
 # Run the basic example
 pixi run python basic_gym.py --quiet --steps 200
 
+# Or watch it live in Newton's native OpenGL viewer (no browser required)
+pixi run python basic_gym.py --viewer gl --steps 200
+
 # Serve the visualization
 # (Consider doing so in a separate terminal so that you can rerun the simulation without restarting the server.)
 # (Use port forwarding when running on a remote server: `ssh -L PORT:localhost:PORT USER@SERVER`)
@@ -46,7 +49,8 @@ pixi run python basic_gym.py --quiet --steps 200 --num-legs 3 --num-worlds 16 --
 
 After starting the server, open the
 [LWMR plane recording](http://localhost:8000/?playbackPath=recordings/lwmr_plane.viser)
-in your browser.
+in your browser. The OpenGL option displays the simulation live and does not
+create or require a Viser recording.
 
 ### Initial Project Setup
 

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Literal
 
 import tyro
 
@@ -11,6 +12,8 @@ class Args:
     quiet: bool = False
     seed: int = 47
     device: str = "cuda"
+    viewer: Literal["viser", "gl", "none"] = "viser"
+    """Visualization backend: a Viser recording, native OpenGL, or none."""
 
     # Simulation configuration parameters
     steps: int = 80
@@ -52,7 +55,7 @@ def main(args: Args) -> None:
 
     env = gym.make(
         "lwmr/Lwmr-v0",
-        render_mode="viser",
+        render_mode=args.viewer,
         robot_config=robot_config,
         quiet=args.quiet,
         device=args.device,
@@ -81,6 +84,9 @@ def main(args: Args) -> None:
         observation, reward, terminated, truncated, info = env.step(action)
 
         env.render()
+
+        if env.unwrapped.viewer is not None and not env.unwrapped.viewer.is_running():
+            break
 
     env.close()
 

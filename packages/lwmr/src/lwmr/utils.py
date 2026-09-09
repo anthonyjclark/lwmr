@@ -5,7 +5,7 @@ from pathlib import Path
 from socketserver import TCPServer
 
 from newton import Model, ModelBuilder
-from newton.viewer import ViewerViser
+from newton.viewer import ViewerGL, ViewerViser
 from numpy import ndarray
 
 
@@ -174,6 +174,16 @@ def create_viewer_viser(
         starts = wp.array([wp.vec3(0, 0, 0.001)])
         ends = wp.array([wp.vec3(*axis)])
         viewer.log_arrows(label, starts, ends, axis, width=0.04)
+
+    return viewer
+
+
+def create_viewer_gl(model: Model, max_worlds: int | None = None) -> ViewerGL:
+    """Create a native OpenGL viewer for live visualization."""
+    viewer = ViewerGL()
+    viewer.set_model(model)
+    if max_worlds is not None:
+        viewer.set_visible_worlds(list(range(max_worlds)))
 
     return viewer
 

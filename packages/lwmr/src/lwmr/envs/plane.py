@@ -12,7 +12,7 @@ from newton.sensors import SensorIMU
 from numpy.typing import NDArray
 
 from ..robot import LwmrRobotConfig, add_lwmr_robot
-from ..utils import create_viewer_viser, quat_to_rpy, world_to_body
+from ..utils import create_viewer_gl, create_viewer_viser, quat_to_rpy, world_to_body
 
 ObsType = NDArray
 InfoType = dict[str, Any]
@@ -24,7 +24,7 @@ newton.use_coord_layout_targets = True
 
 
 class LwmrPlaneEnv(gym.Env):
-    metadata = {"render_modes": ["viser", "none"], "render_fps": 60}
+    metadata = {"render_modes": ["viser", "gl", "none"], "render_fps": 60}
 
     def __init__(
         self,
@@ -254,14 +254,14 @@ class LwmrPlaneEnv(gym.Env):
         render_mode = self.render_mode.lower() if self.render_mode else "none"
         assert render_mode in self.metadata["render_modes"], f"Unsupported render mode: {render_mode}"
 
+        max_viewer_worlds = min(self.model.world_count, self.max_viewer_worlds)
+
         if render_mode == "viser":
             if not self.quiet and Path(self.viewer_output_path).exists():
                 print(f"Warning: {self.viewer_output_path} already exists and will be overwritten.")
 
             recording_path = Path(self.viewer_output_path).resolve()
             recording_path.parent.mkdir(parents=True, exist_ok=True)
-
-            max_viewer_worlds = min(self.model.world_count, self.max_viewer_worlds)
 
             viewer = create_viewer_viser(
                 str(recording_path),
@@ -272,12 +272,15 @@ class LwmrPlaneEnv(gym.Env):
                 max_worlds=max_viewer_worlds,
             )
 
-            viewer.set_world_offsets(spacing=(self.viewer_spacing, self.viewer_spacing, 0.0))
+        elif render_mode == "gl":
+            viewer = create_viewer_gl(self.model, max_worlds=max_viewer_worlds)
 
-            # Set the initial camera pose (this is a bit of a workaround)
-            viewer._server.initial_camera.position = (-0.748, -0.626, 0.576)
-            viewer._server.initial_camera.look_at = (0.000, 0.000, 0.000)
-            viewer._server.initial_camera.up = (0.000, 0.000, 1.000)
+        if viewer:
+            viewer.set_world_offsets(spacing=(self.viewer_spacing, self.viewer_spacing, 0.0))
+            viewer.set_camera(wp.vec3(-0.748, -0.626, 0.576), pitch=-30.6, yaw=39.9)
+
+        if render_mode == "viser":
+            # ViewerViser does not expose projection settings through ViewerBase.
             viewer._server.initial_camera.fov = 1.3090
             viewer._server.initial_camera.near = 0.01
             viewer._server.initial_camera.far = 1000
