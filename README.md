@@ -1,7 +1,5 @@
 # Legged-Wheeled Mobile Robot
 
-Note: we are switching to `pixi` for managing packages since our HPC is out of date and incompatible with PYPI packages.
-
 ## Using Pixi
 
 ### One-Time Setup
@@ -21,7 +19,7 @@ pixi run python -m lwmr
 > The conda-forge build of Viser may not include its compiled browser client.
 > The first tutorial run can therefore use `nodeenv` to download Node.js and
 > build the client. Run it once with network access before using the project on
-> an offline system such as the HPC.
+> an offline system such as a remote server.
 
 ### Running the Tutorials
 
@@ -29,13 +27,26 @@ pixi run python -m lwmr
 cd tutorial
 
 # Run the basic example
-python basic_gym.py --quiet --steps 200
+pixi run python basic_gym.py --quiet --steps 200
 
 # Serve the visualization
 # (Consider doing so in a separate terminal so that you can rerun the simulation without restarting the server.)
-# (Use port forwarding when running on the HPC: `ssh -L PORT:localhost:PORT USER@SERVER`)
-python -m http.server
+# (Use port forwarding when running on a remote server: `ssh -L PORT:localhost:PORT USER@SERVER`)
+pixi run python -m http.server
+
+# Other things to try
+pixi run python basic_gym.py --help
+pixi run python basic_gym.py --quiet --steps 200
+pixi run python basic_gym.py --quiet --steps 200 --num-legs 3
+pixi run python basic_gym.py --quiet --steps 200 --num-legs 3 --num-worlds 2
+pixi run python basic_gym.py --quiet --steps 200 --num-legs 3 --num-worlds 16 --add-step
+pixi run python basic_gym.py --quiet --steps 200 --num-legs 3 --num-worlds 16 --add-step --fixed_base
+pixi run python basic_gym.py --quiet --steps 200 --num-legs 3 --num-worlds 16 --add-step --wh-radius 0.02
 ```
+
+After starting the server, open the
+[LWMR plane recording](http://localhost:8000/?playbackPath=recordings/lwmr_plane.viser)
+in your browser.
 
 ### Initial Project Setup
 
