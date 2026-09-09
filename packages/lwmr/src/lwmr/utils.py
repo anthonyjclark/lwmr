@@ -159,7 +159,9 @@ def create_viewer_viser(
         print(f"Recording to {rec_path}...")
         viewer = newton.viewer.ViewerViser(record_to_viser=rec_path, verbose=False, port=port)
 
-    viewer.set_model(model, max_worlds=max_worlds)
+    viewer.set_model(model)
+    if max_worlds is not None:
+        viewer.set_visible_worlds(list(range(max_worlds)))
 
     axes = [
         ("x-axes", (1.0, 0.0, 0.001)),
