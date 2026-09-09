@@ -17,6 +17,12 @@ pixi install
 pixi run python -m lwmr
 ```
 
+> [!NOTE]
+> The conda-forge build of Viser may not include its compiled browser client.
+> The first tutorial run can therefore use `nodeenv` to download Node.js and
+> build the client. Run it once with network access before using the project on
+> an offline system such as the HPC.
+
 ### Running the Tutorials
 
 ```bash
