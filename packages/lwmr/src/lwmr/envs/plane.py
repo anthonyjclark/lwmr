@@ -19,6 +19,9 @@ InfoType = dict[str, Any]
 OptType = dict[str, Any]
 WaypointType = NDArray
 
+# Use Newton's canonical coordinate-aligned joint target layout.
+newton.use_coord_layout_targets = True
+
 
 class LwmrPlaneEnv(gym.Env):
     metadata = {"render_modes": ["viser", "none"], "render_fps": 60}
@@ -52,8 +55,8 @@ class LwmrPlaneEnv(gym.Env):
     ):
         super().__init__()
 
-        # Set global quiet mode for Warp before newton is initialized
-        wp.config.quiet = quiet
+        # Set global logging before Warp is initialized.
+        wp.config.log_level = wp.LOG_WARNING if quiet else wp.LOG_INFO
 
         default_waypoints = [
             np.array([0.5, 0.0]),
@@ -120,6 +123,9 @@ class LwmrPlaneEnv(gym.Env):
         #
 
         builder = newton.ModelBuilder()
+        # Preserve the contact envelope used before Newton 1.4 began
+        # propagating the default rigid gap to MuJoCo.
+        builder.rigid_gap = 0.0
 
         # TODO: explore ground characteristics (friction, restitution, etc in ShapeConfig)
         # TODO: make environment configuration (e.g., initial conditions, randomization parameters) configurable via kwargs
@@ -142,6 +148,7 @@ class LwmrPlaneEnv(gym.Env):
         initial_xform = wp.transform(p=(0.0, 0.0, drop_height))
 
         robot_builder = newton.ModelBuilder()
+        robot_builder.rigid_gap = 0.0
 
         self.chassis, _, _, _ = add_lwmr_robot(
             robot_builder,
@@ -207,13 +214,12 @@ class LwmrPlaneEnv(gym.Env):
         self.state_0 = self.model.state()
         self.state_1 = self.model.state()
         self.control = self.model.control()
-        self.contacts = self.model.contacts()
 
         # NOTE: using stateless actuators
         self.actuators = self.model.actuators
-        assert self.control.joint_target_vel
+        assert self.control.joint_target_qd
         self.actuator_indices = self.actuators[0].indices.numpy()
-        self.actuation_values = self.control.joint_target_vel.numpy()
+        self.actuation_values = self.control.joint_target_qd.numpy()
 
         #
         # region Solver
@@ -314,7 +320,7 @@ class LwmrPlaneEnv(gym.Env):
             print("  Num bodies:", self.model.body_count)
             print("  Num shapes:", self.model.shape_count)
             print("  Num joints:", self.model.joint_count)
-            print("State, Contacts and Control objects created")
+            print("State and Control objects created")
             print("  State body count:", self.state_0.body_count)
             print("  State joint dof count:", self.state_0.joint_dof_count)
             assert self.control.joint_act
@@ -507,12 +513,11 @@ class LwmrPlaneEnv(gym.Env):
             self.control_steps_counter += 1
 
             self.state_0.clear_forces()
-            self.model.collide(self.state_0, self.contacts)
             self.solver.step(
                 state_in=self.state_0,
                 state_out=self.state_1,
                 control=self.control,
-                contacts=self.contacts,
+                contacts=None,
                 dt=self.sim_dt,
             )
             self.state_0, self.state_1 = self.state_1, self.state_0
@@ -534,7 +539,7 @@ class LwmrPlaneEnv(gym.Env):
         motors = action * 12.0
 
         self.actuation_values[self.actuator_indices] = np.tile(motors, self.model.world_count)  # type: ignore
-        wp.copy(self.control.joint_target_vel, wp.array(self.actuation_values))  # type: ignore
+        wp.copy(self.control.joint_target_qd, wp.array(self.actuation_values))  # type: ignore
 
         if self.graph:
             wp.capture_launch(self.graph)

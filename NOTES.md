@@ -94,7 +94,7 @@ Requirements/recommendations for a mobile base
 Actuators
 1. Create a joint: builder.add_joint_*(...)
 2. Create an actuator: builder.add_actuator(...)
-3. Set the target: wp.copy(self.control.joint_target_vel, wp.array(self.actuation_values))
+3. Set the target: wp.copy(self.control.joint_target_qd, wp.array(self.actuation_values))
 4. Step the actuator: actuator.step(self.state_0, self.control, dt=self.frame_dt)
 
 ## Control
