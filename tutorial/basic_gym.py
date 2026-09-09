@@ -35,6 +35,8 @@ class Args:
 
 def main(args: Args) -> None:
     # Imports are here to speed help
+    from time import sleep
+
     import gymnasium as gym
     import lwmr  # noqa: F401 <-- register the environment
     from lwmr import LwmrRobotConfig
@@ -77,18 +79,24 @@ def main(args: Args) -> None:
 
     observation, info = env.reset(seed=args.seed)
 
-    for step in trange(args.steps):
-        action = next(cmds)
+    try:
+        for step in trange(args.steps):
+            action = next(cmds)
 
-        # Ignoring terminated and truncated
-        observation, reward, terminated, truncated, info = env.step(action)
+            # Ignoring terminated and truncated
+            observation, reward, terminated, truncated, info = env.step(action)
 
-        env.render()
+            env.render()
 
-        if env.unwrapped.viewer is not None and not env.unwrapped.viewer.is_running():
-            break
+            if env.unwrapped.viewer is not None and not env.unwrapped.viewer.is_running():
+                break
 
-    env.close()
+        viewer = env.unwrapped.viewer
+        while args.viewer == "gl" and viewer is not None and viewer.is_running():
+            env.render()
+            sleep(1.0 / 60.0)
+    finally:
+        env.close()
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ cd tutorial
 # Run the basic example
 pixi run python basic_gym.py --quiet --steps 200
 
-# Or watch it live in Newton's native OpenGL viewer (no browser required)
+# Or watch it live in Newton's native OpenGL viewer (close the window to exit)
 pixi run python basic_gym.py --viewer gl --steps 200
 
 # Serve the visualization
