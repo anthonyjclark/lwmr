@@ -50,7 +50,10 @@ pixi run python basic_gym.py --quiet --steps 200 --num-legs 3 --num-worlds 16 --
 After starting the server, open the
 [LWMR plane recording](http://localhost:8000/?playbackPath=recordings/lwmr_plane.viser)
 in your browser. The OpenGL option displays the simulation live and does not
-create or require a Viser recording.
+create or require a Viser recording. Its **Reset** button rebuilds the
+simulation and restarts the tutorial from the beginning while keeping the
+viewer window open. **Pause** and **Step** are part of Newton's default OpenGL
+interface; the tutorial respects both controls.
 
 ### Initial Project Setup
 

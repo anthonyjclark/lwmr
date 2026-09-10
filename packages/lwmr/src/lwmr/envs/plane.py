@@ -90,9 +90,10 @@ class LwmrPlaneEnv(gym.Env):
         self.viewer_port = viewer_port
         self.viewer_spacing = viewer_spacing
         self.viewer_output_path = viewer_output_path_stem
+        self._viewer_reset_requested = False
         self._start_simulation()
 
-    def _start_simulation(self):
+    def _start_simulation(self, viewer=None):
 
         self.steps = 0
 
@@ -249,7 +250,7 @@ class LwmrPlaneEnv(gym.Env):
         # region Viewer
         #
 
-        viewer = None
+        is_new_viewer = viewer is None
 
         render_mode = self.render_mode.lower() if self.render_mode else "none"
         assert render_mode in self.metadata["render_modes"], f"Unsupported render mode: {render_mode}"
@@ -257,29 +258,36 @@ class LwmrPlaneEnv(gym.Env):
         max_viewer_worlds = min(self.model.world_count, self.max_viewer_worlds)
 
         if render_mode == "viser":
-            if not self.quiet and Path(self.viewer_output_path).exists():
-                print(f"Warning: {self.viewer_output_path} already exists and will be overwritten.")
+            if is_new_viewer:
+                if not self.quiet and Path(self.viewer_output_path).exists():
+                    print(f"Warning: {self.viewer_output_path} already exists and will be overwritten.")
 
-            recording_path = Path(self.viewer_output_path).resolve()
-            recording_path.parent.mkdir(parents=True, exist_ok=True)
+                recording_path = Path(self.viewer_output_path).resolve()
+                recording_path.parent.mkdir(parents=True, exist_ok=True)
 
-            viewer = create_viewer_viser(
-                str(recording_path),
-                self.model,
-                quiet=self.quiet,
-                port=self.viewer_port,
-                overwrite=True,
-                max_worlds=max_viewer_worlds,
-            )
+                viewer = create_viewer_viser(
+                    str(recording_path),
+                    self.model,
+                    quiet=self.quiet,
+                    port=self.viewer_port,
+                    overwrite=True,
+                    max_worlds=max_viewer_worlds,
+                )
 
         elif render_mode == "gl":
-            viewer = create_viewer_gl(self.model, max_worlds=max_viewer_worlds)
+            if is_new_viewer:
+                viewer = create_viewer_gl(self.model, max_worlds=max_viewer_worlds)
+            viewer.set_reset_callback(self._request_viewer_reset)
 
         if viewer:
+            if not is_new_viewer:
+                viewer.set_model(self.model)
+                viewer.set_visible_worlds(list(range(max_viewer_worlds)))
             viewer.set_world_offsets(spacing=(self.viewer_spacing, self.viewer_spacing, 0.0))
-            viewer.set_camera(wp.vec3(-0.748, -0.626, 0.576), pitch=-30.6, yaw=39.9)
+            if is_new_viewer:
+                viewer.set_camera(wp.vec3(-0.748, -0.626, 0.576), pitch=-30.6, yaw=39.9)
 
-        if render_mode == "viser":
+        if render_mode == "viser" and is_new_viewer:
             # ViewerViser does not expose projection settings through ViewerBase.
             viewer._server.initial_camera.fov = 1.3090
             viewer._server.initial_camera.near = 0.01
@@ -474,6 +482,9 @@ class LwmrPlaneEnv(gym.Env):
 
     # region Reset
 
+    def _request_viewer_reset(self) -> None:
+        self._viewer_reset_requested = True
+
     def reset(self, *, seed: int | None = None, options: OptType | None = None) -> tuple[ObsType, InfoType]:
         super().reset(seed=seed)
         # TODO: don't reset sim_time if specified (useful for visualization and debugging)
@@ -486,7 +497,7 @@ class LwmrPlaneEnv(gym.Env):
             self.prev_dist = None
             self.prev_segment_progress = None
             self.steps = 0
-            self._start_simulation()
+            self._start_simulation(viewer=self.viewer)
 
         """
         Must reset
@@ -574,6 +585,10 @@ class LwmrPlaneEnv(gym.Env):
             self.viewer.begin_frame(self.sim_time)
             self.viewer.log_state(self.state_0)
             self.viewer.end_frame()
+
+            if self._viewer_reset_requested:
+                self._viewer_reset_requested = False
+                self.reset()
 
     # region close
     def close(self) -> None:

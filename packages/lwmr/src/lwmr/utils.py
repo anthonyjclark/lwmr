@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from math import pi
 from pathlib import Path
 from socketserver import TCPServer
+from typing import Any
 
 from newton import Model, ModelBuilder
 from newton.viewer import ViewerGL, ViewerViser
@@ -122,6 +123,47 @@ def set_initial_state(builder: ModelBuilder):
 
 # region Viewer
 
+
+class LwmrViewerGL(ViewerGL):
+    """ViewerGL workaround that separates close requests from cleanup."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._close_requested = False
+        self._closed = False
+        super().__init__(*args, **kwargs)
+
+        if not self.renderer.headless:
+            # Newton's RendererGL._on_close() calls RendererGL.close() from
+            # inside Pyglet's title-bar callback. The owning application then
+            # calls ViewerGL.close() during normal loop cleanup, closing the
+            # renderer a second time. Install a newer handler that only marks
+            # the window for shutdown and stops propagation to Newton's handler.
+            #
+            # The upstream fix should make RendererGL._on_close() set a close
+            # flag instead of calling close(), and make RendererGL.has_exit()
+            # include window.has_exit. Remove this subclass once Newton ships
+            # that behavior.
+            self.renderer.window.push_handlers(on_close=self._request_close)
+
+    def _request_close(self) -> bool:
+        self._close_requested = True
+        return True
+
+    def is_running(self) -> bool:
+        return not (
+            self._close_requested
+            or self._closed
+            or self.renderer.window.has_exit
+            or self.renderer.has_exit()
+        )
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        super().close()
+        self._closed = True
+
+
 # Path is hardcoded in Newton's viewer for generating docs
 RECORDING_BASE_PATH = Path("docs/_static/")
 
@@ -180,7 +222,7 @@ def create_viewer_viser(
 
 def create_viewer_gl(model: Model, max_worlds: int | None = None) -> ViewerGL:
     """Create a native OpenGL viewer for live visualization."""
-    viewer = ViewerGL()
+    viewer = LwmrViewerGL()
     viewer.set_model(model)
     if max_worlds is not None:
         viewer.set_visible_worlds(list(range(max_worlds)))
