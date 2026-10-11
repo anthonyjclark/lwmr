@@ -563,6 +563,17 @@ class LwmrPlaneEnv(gym.Env):
         self.sim_time += self.frame_dt
         self.steps += 1
 
+        # The solver can occasionally blow up; end the episode instead of
+        # handing NaNs to the learning algorithm.
+        assert self.state_0.body_q and self.state_0.body_qd
+        chassis_q = self.state_0.body_q.numpy()[self.chassis]
+        chassis_qd = self.state_0.body_qd.numpy()[self.chassis]
+        if not (np.isfinite(chassis_q).all() and np.isfinite(chassis_qd).all()):
+            logger.warning("Non-finite chassis state at step {}; terminating episode", self.steps)
+            self.prev_action = action
+            obs = np.zeros(self.observation_space.shape, dtype=np.float32)
+            return obs, -1.0, True, False, {"nan_state": True}
+
         obs = self._get_obs()
         info = self._get_info()
 
